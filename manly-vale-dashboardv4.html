@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manly Vale FC — Results &amp; Ladders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#111C33;
+  --ink-soft:#4A566E;
+  --ink-faint:#8790A3;
+  --paper:#EEF1F5;
+  --card:#FFFFFF;
+  --line:#DCE2EA;
+  --win:#1B7F5A;
+  --draw:#98A0AE;
+  --loss:#BE3A2B;
+  --amber:#E39B1F;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 64px}
+
+header.masthead{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:16px;flex-wrap:wrap;border-bottom:3px solid var(--ink);
+  padding-bottom:12px;margin-bottom:8px;
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand img{width:52px;height:52px;object-fit:contain;flex:none}
+.brand h1{
+  font-family:"Barlow Condensed",Impact,sans-serif;font-weight:700;
+  font-size:clamp(30px,6vw,46px);letter-spacing:.01em;text-transform:uppercase;
+  margin:0;line-height:.95;
+}
+.brand .sub{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;margin-top:3px}
+.masthead-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.stamp{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;text-align:right}
+button.refresh{
+  font:inherit;font-weight:600;font-size:13px;background:var(--ink);color:#fff;
+  border:0;padding:9px 16px;border-radius:var(--radius);cursor:pointer;
+}
+button.refresh:hover{background:#243356}
+button.refresh:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:2.5px solid var(--amber);outline-offset:2px}
+
+.tally{display:flex;flex-wrap:wrap;border:1px solid var(--line);background:var(--card);border-radius:var(--radius);overflow:hidden;margin:16px 0 22px}
+.tally div{padding:11px 18px;flex:1 1 90px;border-right:1px solid var(--line)}
+.tally div:last-child{border-right:0}
+.tally b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:27px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.tally span{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+.tally .w b{color:var(--win)} .tally .l b{color:var(--loss)}
+
+.status{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:24px}
+.status p{margin:0 0 10px;color:var(--ink-soft);font-size:14px}
+.status p:last-child{margin-bottom:0}
+.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .2s linear}
+.status.error{border-color:var(--loss)}
+.status.error strong{color:var(--loss)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--paper);padding:1px 5px;border-radius:4px}
+
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 318px;gap:22px;align-items:start}
+@media (max-width:960px){
+  .layout{grid-template-columns:1fr}
+  aside.upnext{order:-1}
+}
+
+section.group{margin-bottom:10px}
+.group-head{
+  width:100%;font:inherit;background:none;border:0;cursor:pointer;
+  display:flex;align-items:center;gap:10px;text-align:left;
+  padding:0 0 6px;margin:22px 0 12px;border-bottom:1px solid var(--line);
+}
+.group-head .tw{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft)}
+.group-head .count{font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:2px 8px}
+.group-head .caret{margin-left:auto;color:var(--ink-faint);font-size:11px;transition:transform .15s}
+section.group.closed .caret{transform:rotate(-90deg)}
+section.group.closed .grid{display:none}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+
+.team{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.team-head{width:100%;text-align:left;font:inherit;background:none;border:0;padding:13px 15px;cursor:pointer;display:block}
+.team-head:hover{background:#F7F9FB}
+.row1{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.division{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;text-transform:uppercase;letter-spacing:.02em;line-height:1.05}
+.pos{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;font-variant-numeric:tabular-nums;color:var(--ink-faint);flex:none}
+.pos.top{color:var(--win)}
+.record{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;margin-top:2px}
+
+.form{display:flex;gap:5px;margin:12px 0 11px}
+.fm{display:flex;flex-direction:column;align-items:center;gap:3px}
+.fm i{width:25px;height:23px;border-radius:4px;font-style:normal;font-size:11px;font-weight:600;color:#fff;display:flex;align-items:center;justify-content:center}
+.fm i.W{background:var(--win)} .fm i.D{background:var(--draw)} .fm i.L{background:var(--loss)}
+.fm i.X{background:transparent;border:1px dashed var(--line);color:var(--ink-faint)}
+.fm b{font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-soft);letter-spacing:-.01em}
+
+.line{font-size:13px;color:var(--ink-soft);display:flex;gap:7px;align-items:baseline}
+.line + .line{margin-top:4px}
+.line em{font-style:normal;font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;flex:none;width:38px}
+.line b{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.meta{color:var(--ink-faint)}
+.venue{display:block;font-size:12px;color:var(--ink-faint);margin-top:1px}
+.chev{font-size:11px;color:var(--ink-faint);margin-top:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+
+.ladder{display:none;border-top:1px solid var(--line);padding:4px 0 8px}
+.team.open .ladder{display:block}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;text-align:right;padding:7px 5px 5px}
+th:first-child,th:nth-child(2){text-align:left}
+td{padding:5px;text-align:right;font-variant-numeric:tabular-nums;border-top:1px solid #F0F3F6}
+td:first-child,td:nth-child(2){text-align:left}
+td:first-child{color:var(--ink-faint);width:22px;padding-left:15px}
+td:last-child{font-weight:600;padding-right:15px}
+th:first-child{padding-left:15px} th:last-child{padding-right:15px}
+tr.us td{background:#FFF6E3;font-weight:600}
+tr.us td:nth-child(2){box-shadow:inset 3px 0 0 var(--amber)}
+
+aside.upnext{position:sticky;top:16px}
+@media (max-width:960px){aside.upnext{position:static}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.panel-head{
+  width:100%;font:inherit;background:none;border:0;cursor:pointer;
+  display:flex;align-items:center;gap:9px;text-align:left;
+  padding:12px 15px;border-bottom:1px solid var(--line);
+}
+.panel-head:hover{background:#F7F9FB}
+.panel-head .tw{
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;
+  letter-spacing:.16em;text-transform:uppercase;
+}
+.panel-head .count{
+  font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--ink-faint);
+  background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:2px 8px;
+}
+.panel-head .caret{margin-left:auto;color:var(--ink-faint);font-size:11px;transition:transform .15s}
+.panel.closed .panel-head{border-bottom:0}
+.panel.closed .panel-head .caret{transform:rotate(-90deg)}
+.panel.closed .scroll{display:none}
+.panel .scroll{max-height:calc(100vh - 120px);overflow-y:auto}
+@media (max-width:960px){.panel .scroll{max-height:none}}
+.daybar{padding:7px 15px;background:var(--ink);color:#fff;font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;position:sticky;top:0}
+.fx{padding:9px 15px;border-bottom:1px solid #F0F3F6;display:flex;gap:10px}
+.fx:last-child{border-bottom:0}
+.fx .t{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;flex:none;width:56px;line-height:1.3}
+.fx .d{min-width:0}
+.fx .dv{font-weight:600;font-size:12.5px}
+.fx .op{font-size:12.5px;color:var(--ink-soft)}
+.fx .gr{font-size:11.5px;color:var(--ink-faint);margin-top:1px}
+.fx .gr a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--line)}
+.fx .gr a:hover{color:var(--ink)}
+.ha{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.08em;padding:1px 4px;border-radius:3px;vertical-align:1px;margin-right:4px}
+.ha.H{background:#E4F2EC;color:var(--win)}
+.ha.A{background:#F0F2F5;color:var(--ink-soft)}
+.empty{padding:16px 15px;font-size:13px;color:var(--ink-faint)}
+
+footer{margin-top:44px;font-size:11.5px;color:var(--ink-faint);line-height:1.6}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="brand">
+    <img src="https://ocean.dribl.com/c063b4747b864cf587d6f3ac15c28c48" alt="" onerror="this.style.display='none'">
+    <div>
+      <h1>Manly Vale FC</h1>
+      <div class="sub">Competitive teams · U12 and up</div>
+    </div>
+  </div>
+  <div class="masthead-actions">
+    <div class="stamp" id="stamp"></div>
+    <button class="refresh" id="refresh" disabled>Refresh</button>
+  </div>
+</header>
+
+<div class="tally" id="tally" hidden>
+  <div class="w"><b id="tW">0</b><span>Won</span></div>
+  <div><b id="tD">0</b><span>Drew</span></div>
+  <div class="l"><b id="tL">0</b><span>Lost</span></div>
+  <div><b id="tT">0</b><span>Teams</span></div>
+  <div><b id="tTop">0</b><span>Top four</span></div>
+</div>
+
+<div class="status" id="status">
+  <p id="statusText">Finding Manly Vale teams…</p>
+  <div class="bar"><i id="barFill"></i></div>
+</div>
+
+<div class="layout" id="layout" hidden>
+  <main id="board"></main>
+  <aside class="upnext">
+    <div class="panel" id="upPanel">
+      <button class="panel-head" id="upToggle" aria-expanded="true" aria-controls="upcoming">
+        <span class="tw">Next up</span>
+        <span class="count" id="upCount" hidden></span>
+        <span class="caret">&#9660;</span>
+      </button>
+      <div class="scroll" id="upcoming"></div>
+    </div>
+  </aside>
+</div>
+
+<footer>
+  Live from the MWFA Dribl match centre. Divisions appear when their ladder is published —
+  U12 and above. Latest result is the most recent completed match; washouts and cancellations are skipped.
+  Grounds come from the club fixture list; tap one to open it in maps.
+</footer>
+
+</div>
+
+<script>
+const CFG = {
+  api: 'https://mc-api.dribl.com/api',
+  tenant: 'kbam1QjmwX',        // Manly Warringah Football Association
+  season: 'bam17yAKwX',        // Winter 2026 — update for a new season
+  club:   'AnmYn0zNzG',        // Manly Vale FC
+  clubCode: 'MVFC',
+  concurrency: 6,
+  maxFixturePages: 60
+};
+
+const $ = id => document.getElementById(id);
+const qs = p => new URLSearchParams(p).toString();
+
+async function apiRaw(path, params){
+  const res = await fetch(`${CFG.api}${path}?${qs(params)}`);
+  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+  return res.json();
+}
+async function api(path, params){
+  return (await apiRaw(path, params)).data || [];
+}
+
+async function pool(items, limit, fn, onTick){
+  const out = new Array(items.length);
+  let next = 0, done = 0;
+  async function worker(){
+    while (next < items.length){
+      const i = next++;
+      try { out[i] = await fn(items[i]); } catch { out[i] = null; }
+      onTick(++done, items.length);
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
+  return out.filter(Boolean);
+}
+
+/* ---------- grouping / ordering ---------- */
+function ageRank(title){
+  const t = title.replace(/^W-/, '');
+  const n = t.match(/^(\d+)/);
+  if (n) return parseInt(n[1], 10);
+  if (t.startsWith('PL')) return 100;
+  if (t.startsWith('AL')) return 101;
+  if (t.startsWith('O35')) return 102;
+  if (t.startsWith('O45')) return 103;
+  if (t.startsWith('40')) return 104;
+  return 200;
+}
+function groupOf(title){
+  const female = title.startsWith('W-');
+  const junior = ageRank(title) < 100;
+  return female ? (junior ? 'Girls' : 'Women') : (junior ? 'Junior mixed' : 'Senior mixed');
+}
+const GROUP_ORDER = ['Junior mixed','Senior mixed','Girls','Women'];
+
+/* ---------- match helpers ---------- */
+/* Safari refuses timestamps with more than 3 fractional-second digits, and
+   Dribl's fixtures feed sends 6 ("...T04:00:00.000000Z"). Normalise before
+   parsing, or every date silently becomes Invalid Date on iPhone.          */
+function when(iso){
+  if (iso instanceof Date) return iso;
+  let s = String(iso).trim().replace(' ', 'T');
+  s = s.replace(/\.(\d{3})\d+/, '.$1');                  // microseconds -> ms
+  if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';      // assume UTC
+  return new Date(s);
+}
+const validDate = d => d instanceof Date && !isNaN(d.getTime());
+const played = m => m.status === 'complete' && m.home_score !== null && m.away_score !== null;
+
+function outcome(m, hash){
+  const home = m.home_team_hash_id === hash;
+  const us = home ? m.home_score : m.away_score;
+  const them = home ? m.away_score : m.home_score;
+  return { home, us, them, letter: us > them ? 'W' : us < them ? 'L' : 'D' };
+}
+const shortName = (full, division) => full.replace(division, ' ').replace(/\s+/g, ' ').trim();
+const fmtDate = d => d.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
+const fmtDay  = d => d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
+const fmtTime = d => d.toLocaleTimeString('en-AU', { hour:'numeric', minute:'2-digit' }).replace(/\s/g,'').toLowerCase();
+
+/* ---------- venue lookup ----------
+   The ladders endpoint carries no location, so grounds come from /fixtures,
+   joined on division + kick-off time. /fixtures is cursor-paginated and ignores
+   disable_paging, so we seed a cursor near today rather than crawling from
+   round 1 — and fall back to normal paging if the seed is rejected.          */
+
+function makeCursor(date){
+  const p = n => String(n).padStart(2, '0');
+  const s = `${date.getUTCFullYear()}-${p(date.getUTCMonth()+1)}-${p(date.getUTCDate())} `
+          + `${p(date.getUTCHours())}:${p(date.getUTCMinutes())}:${p(date.getUTCSeconds())}`;
+  const json = JSON.stringify({
+    'schedule_events.date': s,
+    'schedule_events.id': 0,
+    '_pointsToNextItems': true
+  });
+  return btoa(json).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+async function fetchVenues(){
+  const map = new Map();
+  const now = Date.now();
+  const horizon = now + 28 * 864e5;
+  const base = { tenant: CFG.tenant, season: CFG.season, club: CFG.club };
+
+  let cursor = makeCursor(new Date(now - 8 * 864e5));
+  let seeded = true, pages = 0;
+
+  while (pages < CFG.maxFixturePages){
+    let body;
+    try {
+      body = await apiRaw('/fixtures', cursor ? { ...base, cursor } : base);
+    } catch { break; }
+
+    const rows = body.data || [];
+    if (!rows.length) break;
+
+    // Did the seeded cursor take effect? If page one is deep in the past, it didn't.
+    if (seeded && pages === 0){
+      const first = when(rows[0].attributes.date).getTime();
+      if (first < now - 30 * 864e5){
+        seeded = false;
+        cursor = null;
+        continue;               // restart, paging from the beginning
+      }
+    }
+
+    for (const f of rows){
+      const a = f.attributes;
+      if (!a.ground_name) continue;
+      const field = a.field_name && !/not in use/i.test(a.field_name) ? a.field_name : null;
+      map.set(`${a.league_name}|${when(a.date).getTime()}`, {
+        ground: a.ground_name,
+        field,
+        lat: a.ground_latitude,
+        lng: a.ground_longitude
+      });
+    }
+
+    const lastDate = when(rows[rows.length - 1].attributes.date);
+    if (!validDate(lastDate)) break;          // never page blindly
+    if (lastDate.getTime() > horizon) break;
+
+    const nextCursor = body.meta && body.meta.next_cursor;
+    if (!nextCursor) break;
+    cursor = nextCursor;
+    pages++;
+  }
+  return map;
+}
+
+const venueFor = (venues, division, match) =>
+  venues.get(`${division}|${when(match.date).getTime()}`) || null;
+
+function venueText(v){
+  if (!v) return null;
+  return v.field ? `${v.ground} · ${v.field}` : v.ground;
+}
+function venueLink(v){
+  if (!v) return null;
+  const label = venueText(v);
+  if (v.lat == null || v.lng == null) return label;
+  const url = `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`;
+  return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
+}
+
+/* ---------- load ---------- */
+async function load(){
+  $('refresh').disabled = true;
+  $('board').innerHTML = '';
+  $('upcoming').innerHTML = '';
+  $('layout').hidden = true;
+  $('tally').hidden = true;
+
+  const box = $('status');
+  box.hidden = false;
+  box.className = 'status';
+  box.innerHTML = '<p id="statusText">Finding Manly Vale teams…</p><div class="bar"><i id="barFill"></i></div>';
+
+  try {
+    const venuesPromise = Promise.race([
+      fetchVenues(),
+      new Promise(r => setTimeout(() => r(new Map()), 20000))
+    ]).catch(() => new Map());
+
+    const comps = await api('/list/competitions', { disable_paging:true, tenant:CFG.tenant, season:CFG.season });
+
+    const divisions = [];
+    for (const c of comps){
+      const leagues = await api('/list/leagues', {
+        disable_paging:true, tenant:CFG.tenant, season:CFG.season, competition:c.id
+      });
+      leagues.filter(l => l.ladder_access === 'public')
+             .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
+    }
+
+    $('statusText').textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
+
+    const found = await pool(divisions, CFG.concurrency, async d => {
+      const rows = await api('/ladders', {
+        date_range:'default', ladder_type:'regular', require_pools:true,
+        tenant:CFG.tenant, season:CFG.season, competition:d.competition, league:d.id
+      });
+      const ours = rows.filter(r => r.attributes.club_code === CFG.clubCode);
+      return ours.length ? { division:d.title, rows, ours } : null;
+    }, (done, total) => { $('barFill').style.width = `${Math.round(done/total*100)}%`; });
+
+    const teams = [];
+    for (const f of found)
+      for (const e of f.ours)
+        teams.push({ division:f.division, a:e.attributes, ladder:f.rows });
+
+    if (!teams.length) throw new Error('No Manly Vale teams found in the published divisions.');
+
+    teams.sort((x,y) =>
+      GROUP_ORDER.indexOf(groupOf(x.division)) - GROUP_ORDER.indexOf(groupOf(y.division)) ||
+      ageRank(x.division) - ageRank(y.division) ||
+      x.division.localeCompare(y.division)
+    );
+
+    const venues = await venuesPromise;
+
+    renderBoard(teams, venues);
+    renderUpcoming(teams, venues);
+    box.hidden = true;
+    $('layout').hidden = false;
+    $('stamp').textContent = 'Updated ' + new Date().toLocaleString('en-AU',
+      { weekday:'short', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' });
+  } catch (err){
+    box.className = 'status error';
+    box.innerHTML =
+      `<p><strong>Couldn't load from Dribl.</strong> ${err.message}</p>` +
+      `<p>If this says "Failed to fetch", the browser blocked the request. Serve the file over ` +
+      `<code>http://</code> instead of opening it directly — from this folder run ` +
+      `<code>python3 -m http.server 8000</code> and visit ` +
+      `<code>http://localhost:8000/manly-vale-dashboard.html</code>.</p>`;
+  }
+  $('refresh').disabled = false;
+}
+
+/* ---------- board ---------- */
+function renderBoard(teams, venues){
+  let W=0, D=0, L=0, top=0;
+  const board = $('board');
+  let currentGroup = null, grid = null;
+
+  for (const t of teams){
+    const a = t.a;
+    const g = groupOf(t.division);
+
+    if (g !== currentGroup){
+      currentGroup = g;
+      const section = document.createElement('section');
+      section.className = 'group';
+      const n = teams.filter(x => groupOf(x.division) === g).length;
+      section.innerHTML =
+        `<button class="group-head" aria-expanded="true">
+           <span class="tw">${g}</span>
+           <span class="count">${n} ${n === 1 ? 'team' : 'teams'}</span>
+           <span class="caret">&#9660;</span>
+         </button>
+         <div class="grid"></div>`;
+      const head = section.querySelector('.group-head');
+      head.addEventListener('click', () => {
+        const closed = section.classList.toggle('closed');
+        head.setAttribute('aria-expanded', !closed);
+      });
+      board.appendChild(section);
+      grid = section.querySelector('.grid');
+    }
+
+    const recent = (a.recent_matches || []).filter(played).sort((m,n) => when(m.date) - when(n.date));
+    const last = recent[recent.length - 1];
+    const next = (a.upcoming_matches || []).slice().sort((m,n) => when(m.date) - when(n.date))[0];
+
+    if (last){
+      const o = outcome(last, a.team_hash_id);
+      if (o.letter === 'W') W++; else if (o.letter === 'L') L++; else D++;
+    }
+    if (a.position <= 4) top++;
+
+    const form = recent.slice(-5).map(m => {
+      const o = outcome(m, a.team_hash_id);
+      const opp = shortName(o.home ? m.away_team_name : m.home_team_name, t.division);
+      return `<div class="fm" title="${o.home ? 'vs' : 'away to'} ${opp} &#183; ${fmtDate(when(m.date))}">
+                <i class="${o.letter}">${o.letter}</i><b>${o.us}&#8211;${o.them}</b>
+              </div>`;
+    }).join('') || '<div class="fm"><i class="X">&#8211;</i><b>&nbsp;</b></div>';
+
+    let lastLine = '<div class="line"><em>Last</em><span>No completed matches yet</span></div>';
+    if (last){
+      const o = outcome(last, a.team_hash_id);
+      const opp = shortName(o.home ? last.away_team_name : last.home_team_name, t.division);
+      const verb = o.letter === 'W' ? 'beat' : o.letter === 'L' ? 'lost to' : 'drew with';
+      const v = venueText(venueFor(venues, t.division, last));
+      lastLine = `<div class="line"><em>Last</em><span><b>${o.us}&#8211;${o.them}</b> ${verb} ${opp}
+                  <span class="meta">&#183; ${fmtDate(when(last.date))}</span>
+                  ${v ? `<span class="venue">${v}</span>` : ''}</span></div>`;
+    }
+
+    let nextLine = '<div class="line"><em>Next</em><span>Nothing scheduled</span></div>';
+    if (next){
+      const home = next.home_team_hash_id === a.team_hash_id;
+      const opp = shortName(home ? next.away_team_name : next.home_team_name, t.division);
+      const d = when(next.date);
+      const v = venueLink(venueFor(venues, t.division, next));
+      nextLine = `<div class="line"><em>Next</em><span>${home ? 'vs' : 'away to'} ${opp}
+                  <span class="meta">&#183; ${fmtDate(d)} ${fmtTime(d)}</span>
+                  ${v ? `<span class="venue">${v}</span>` : ''}</span></div>`;
+    }
+
+    const ladderRows = t.ladder.slice()
+      .sort((x,y) => x.attributes.position - y.attributes.position)
+      .map(r => {
+        const b = r.attributes;
+        const mine = b.team_hash_id === a.team_hash_id;
+        return `<tr class="${mine ? 'us' : ''}">
+          <td>${b.position}</td><td>${shortName(b.team_name, t.division)}</td>
+          <td>${b.played}</td><td>${b.won}</td><td>${b.drawn}</td><td>${b.lost}</td>
+          <td>${b.goal_difference > 0 ? '+' : ''}${b.goal_difference}</td>
+          <td>${b.points}</td></tr>`;
+      }).join('');
+
+    const card = document.createElement('div');
+    card.className = 'team';
+    card.innerHTML = `
+      <button class="team-head" aria-expanded="false">
+        <div class="row1">
+          <span class="division">${t.division}</span>
+          <span class="pos ${a.position <= 4 ? 'top' : ''}">${a.position}<span style="font-size:12px">/${t.ladder.length}</span></span>
+        </div>
+        <div class="record">${a.played} played &#183; ${a.won}W ${a.drawn}D ${a.lost}L &#183; ${a.points} pts</div>
+        <div class="form">${form}</div>
+        ${lastLine}${nextLine}
+        <div class="chev">Show ladder</div>
+      </button>
+      <div class="ladder">
+        <table>
+          <thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead>
+          <tbody>${ladderRows}</tbody>
+        </table>
+      </div>`;
+
+    const btn = card.querySelector('.team-head');
+    btn.addEventListener('click', e => {
+      if (e.target.closest('a')) return;          // let ground links through
+      const open = card.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open);
+      card.querySelector('.chev').textContent = open ? 'Hide ladder' : 'Show ladder';
+    });
+
+    grid.appendChild(card);
+  }
+
+  $('tW').textContent = W; $('tD').textContent = D; $('tL').textContent = L;
+  $('tT').textContent = teams.length; $('tTop').textContent = top;
+  $('tally').hidden = false;
+}
+
+/* ---------- next-up panel ---------- */
+function renderUpcoming(teams, venues){
+  const fixtures = [];
+  for (const t of teams){
+    const next = (t.a.upcoming_matches || []).slice().sort((m,n) => when(m.date) - when(n.date))[0];
+    if (!next) continue;
+    const home = next.home_team_hash_id === t.a.team_hash_id;
+    fixtures.push({
+      date: when(next.date),
+      division: t.division,
+      opponent: shortName(home ? next.away_team_name : next.home_team_name, t.division),
+      home,
+      venue: venueFor(venues, t.division, next)
+    });
+  }
+  fixtures.sort((a,b) => a.date - b.date);
+
+  const el = $('upcoming');
+  const count = $('upCount');
+  count.textContent = `${fixtures.length} ${fixtures.length === 1 ? 'match' : 'matches'}`;
+  count.hidden = false;
+
+  if (!fixtures.length){
+    count.hidden = true;
+    el.innerHTML = '<div class="empty">No fixtures scheduled. The season may have finished.</div>';
+    return;
+  }
+
+  let html = '', day = null;
+  for (const f of fixtures){
+    const key = f.date.toDateString();
+    if (key !== day){
+      day = key;
+      html += `<div class="daybar">${fmtDay(f.date)}</div>`;
+    }
+    const v = venueLink(f.venue);
+    html += `<div class="fx">
+      <div class="t">${fmtTime(f.date)}</div>
+      <div class="d">
+        <div class="dv">${f.division}</div>
+        <div class="op"><span class="ha ${f.home ? 'H' : 'A'}">${f.home ? 'H' : 'A'}</span>${f.opponent}</div>
+        ${v ? `<div class="gr">${v}</div>` : ''}
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+/* ---------- Next up panel toggle ----------
+   Collapsed by default on narrow screens, where the panel sits above the
+   team cards and would otherwise be a long scroll to get past.            */
+(function initUpPanel(){
+  const panel  = $('upPanel');
+  const toggle = $('upToggle');
+  if (window.matchMedia('(max-width: 960px)').matches) panel.classList.add('closed');
+  toggle.setAttribute('aria-expanded', !panel.classList.contains('closed'));
+  toggle.addEventListener('click', () => {
+    const closed = panel.classList.toggle('closed');
+    toggle.setAttribute('aria-expanded', !closed);
+  });
+})();
+
+$('refresh').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>
