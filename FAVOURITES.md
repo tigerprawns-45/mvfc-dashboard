@@ -1,6 +1,7 @@
 # Favourites — specification
 
-Status: **proposed, not built.** Written for review before implementation.
+Status: **built.** This document describes the shipped behaviour; both open
+questions were answered *no* and the sections below reflect that.
 
 Lets someone mark the teams they care about so those teams sit at the top of the
 board and the top of Next up, and so the choice survives a reload and can be shared
@@ -139,7 +140,7 @@ an acceptable fallback.
 
 | Case | Behaviour |
 |---|---|
-| Two Manly Vale teams in one division (`AL 04 Mixed`, `W-AL 03 Female` this season) | Starred independently; the hash distinguishes them. The card heading must show enough to tell them apart — currently both cards read the same division name, so the team's own suffix needs surfacing. |
+| Two Manly Vale teams in one division (`AL 04 Mixed`, `W-AL 03 Female` this season) | Starred independently; the hash distinguishes them. **Resolved:** stripping the division and the club from `team_name` leaves `A` / `B` for these four teams and an empty string for the other 34, so the suffix renders as a small tag whenever it is non-empty. No duplicate detection needed. |
 | Favourite has no upcoming fixture | Appears in `Your teams` on the board, absent from the pinned Next up block. |
 | Every team favourited | `Your teams` holds all 38, the four group headings vanish. Allowed. |
 | `?fav=` with 100 junk values | Ignored; only hashes matching a loaded team count. |
@@ -155,10 +156,18 @@ an acceptable fallback.
 
 ---
 
-## 7. Open questions
+## 7. Resolved questions
 
-1. Should `Your teams` also pin to the top of the **tally** — i.e. a W/D/L summary
-   for favourites only, alongside the club-wide one? Useful for a parent with two
-   kids playing, noise for everyone else. Leaning no.
-2. Should the star appear in the Next up rows too, or only on cards? Leaning cards
-   only — two places to toggle the same state invites confusion about scope.
+1. **A favourites-only tally alongside the club-wide one — no.** The tally stays
+   club-wide.
+2. **Stars in the Next up rows as well as on cards — no.** Cards are the only place
+   favourite state can be changed; two controls for one piece of state invites
+   confusion about scope.
+
+## 8. Deliberately not done
+
+**Stale hashes are never pruned from storage.** A hand-edited or outdated `?fav=`
+value leaves entries that match no team. Pruning them against the rendered team list
+looks tidier but is unsafe: `pool()` swallows a failed division fetch, so one
+transient error would silently and permanently delete a real favourite. Unmatched
+hashes are inert — they cost a few bytes and render nothing.

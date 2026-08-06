@@ -83,11 +83,23 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 }
 
 section.group{margin-bottom:10px}
-.group-head{
-  width:100%;font:inherit;background:none;border:0;cursor:pointer;
-  display:flex;align-items:center;gap:10px;text-align:left;
-  padding:0 0 6px;margin:22px 0 12px;border-bottom:1px solid var(--line);
+section.group[hidden]{display:none}
+.group-bar{
+  display:flex;align-items:center;gap:10px;
+  padding-bottom:6px;margin:22px 0 12px;border-bottom:1px solid var(--line);
 }
+.group-head{
+  flex:1;min-width:0;font:inherit;background:none;border:0;cursor:pointer;
+  display:flex;align-items:center;gap:10px;text-align:left;padding:0;
+}
+.favs .group-bar{border-bottom-color:var(--amber)}
+.favs .tw{color:var(--ink)}
+button.copy{
+  font:inherit;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  background:none;color:var(--ink-soft);border:1px solid var(--line);border-radius:20px;
+  padding:9px 13px;cursor:pointer;flex:none;
+}
+button.copy:hover{border-color:var(--ink-faint);color:var(--ink)}
 .group-head .tw{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft)}
 .group-head .count{font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:2px 8px}
 .group-head .caret{margin-left:auto;color:var(--ink-faint);font-size:11px;transition:transform .15s}
@@ -96,8 +108,28 @@ section.group.closed .grid{display:none}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
 
 .team{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
-.team-head{width:100%;text-align:left;font:inherit;background:none;border:0;padding:13px 15px;cursor:pointer;display:block}
+/* The star has to be a sibling of .team-head, never a child: a <button> inside a
+   <button> is invalid and iOS Safari mis-targets the tap.                      */
+.team-top{display:flex;align-items:flex-start}
+.team-head{flex:1;min-width:0;text-align:left;font:inherit;background:none;border:0;padding:13px 15px;cursor:pointer;display:block}
 .team-head:hover{background:#F7F9FB}
+button.star{
+  flex:none;font:inherit;background:none;border:0;cursor:pointer;padding:0;
+  font-size:19px;line-height:1;color:var(--ink-faint);
+  /* Sized explicitly rather than by padding: the star glyph's width varies between
+     iOS, Android and Windows, and padding alone left it a hair under 44px.      */
+  min-width:46px;min-height:46px;
+  display:flex;align-items:center;justify-content:center;
+  align-self:flex-start;
+}
+button.star.on{color:var(--amber)}
+button.star:active{transform:scale(.88)}
+.favs .team{border-color:#EAD6A8}
+.tag{
+  display:inline-block;margin-left:6px;font-family:Inter,sans-serif;font-size:10px;
+  font-weight:600;letter-spacing:.08em;vertical-align:2px;color:var(--ink-soft);
+  background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:1px 5px;
+}
 .row1{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .division{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;text-transform:uppercase;letter-spacing:.02em;line-height:1.05}
 .pos{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;font-variant-numeric:tabular-nums;color:var(--ink-faint);flex:none}
@@ -167,6 +199,8 @@ aside.upnext{position:sticky;top:16px}
 .panel .scroll{max-height:calc(100vh - 120px);overflow-y:auto}
 @media (max-width:960px){.panel .scroll{max-height:none}}
 .daybar{padding:7px 15px;background:var(--ink);color:#fff;font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;position:sticky;top:0}
+.daybar.pin{background:var(--amber);color:#3A2A05}
+.fx .t .dy{display:block;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:.02em;color:var(--ink-faint);margin-top:1px}
 .fx{padding:9px 15px;border-bottom:1px solid #F0F3F6;display:flex;gap:10px}
 .fx:last-child{border-bottom:0}
 .fx .t{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;flex:none;width:56px;line-height:1.3}
@@ -489,8 +523,65 @@ function notice(html, kind){
   el.hidden = false;
 }
 
+/* ---------- favourites ----------
+   Keyed to the season because team_hash_id is allocated per season — the same
+   real-world team gets a different hash next winter, so an unscoped key would
+   either match nothing or, worse, match a stranger's team that inherited it.
+   A rollover therefore starts clean, which is also what people want: a child
+   changes division every year anyway.                                        */
+
+const FAV_KEY = `mvfc:favs:${CFG.season}`;
+let favs = new Set();
+
+function loadFavs(){
+  const shared = new URLSearchParams(location.search).get('fav');
+  if (shared !== null){
+    // A shared link wins for this load, then becomes this device's own selection
+    // so a later visit without the parameter keeps the same teams.
+    favs = new Set(shared.split(',').map(s => s.trim()).filter(Boolean));
+    writeFavs();
+    return;
+  }
+  try {
+    const raw = localStorage.getItem(FAV_KEY);
+    favs = new Set(raw ? JSON.parse(raw) : []);
+  } catch { favs = new Set(); }
+}
+function writeFavs(){
+  try { localStorage.setItem(FAV_KEY, JSON.stringify([...favs])); } catch { /* private mode */ }
+}
+const isFav = h => favs.has(h);
+
+function syncUrl(){
+  const url = new URL(location.href);
+  if (favs.size) url.searchParams.set('fav', [...favs].join(','));
+  else url.searchParams.delete('fav');
+  history.replaceState(null, '', url);   // keeps the address bar shareable, no history entry
+}
+function toggleFav(h){
+  if (favs.has(h)) favs.delete(h); else favs.add(h);
+  writeFavs();
+  syncUrl();
+  return favs.has(h);
+}
+
+/* Two Manly Vale teams share a division in AL 04 Mixed and W-AL 03 Female, and the
+   division name alone cannot tell them apart. Stripping the division and the club
+   from the team name leaves "A" / "B" for those, and nothing at all for the other
+   36 — so the suffix can simply render whenever it is non-empty.              */
+const teamTag = (a, division) =>
+  shortName(a.team_name, division).replace(/^Manly Vale FC\s*/i, '').trim();
+const divisionLabel = (a, division) => {
+  const tag = teamTag(a, division);
+  return tag ? `${division} ${tag}` : division;
+};
+
 /* ---------- load ---------- */
+/* Held so starring a team can rebuild the Next up panel without another fetch. */
+const state = { teams: null, venues: null };
+
 function paint(teams, venues){
+  state.teams = teams; state.venues = venues;
   $('board').innerHTML = '';
   $('upcoming').innerHTML = '';
   renderBoard(teams, venues);
@@ -594,35 +685,82 @@ async function load(){
 }
 
 /* ---------- board ---------- */
+function makeSection(title, isFavs){
+  const section = document.createElement('section');
+  section.className = 'group' + (isFavs ? ' favs' : '');
+  section.innerHTML =
+    `<div class="group-bar">
+       <button class="group-head" aria-expanded="true">
+         <span class="tw">${title}</span>
+         <span class="count"></span>
+         <span class="caret">&#9660;</span>
+       </button>
+       ${isFavs ? '<button class="copy" type="button" hidden>Copy link</button>' : ''}
+     </div>
+     <div class="grid"></div>`;
+  const head = section.querySelector('.group-head');
+  head.addEventListener('click', () => {
+    const closed = section.classList.toggle('closed');
+    head.setAttribute('aria-expanded', !closed);
+  });
+  return { el: section, grid: section.querySelector('.grid') };
+}
+
+/* Counts change as teams are starred, and a group whose teams have all been
+   favourited should disappear rather than render as an empty heading.        */
+function refreshSections(){
+  for (const s of document.querySelectorAll('#board .group')){
+    const n = s.querySelectorAll('.team').length;
+    s.hidden = n === 0;
+    s.querySelector('.count').textContent = `${n} ${n === 1 ? 'team' : 'teams'}`;
+  }
+  const copy = document.querySelector('#board .favs .copy');
+  if (copy) copy.hidden = favs.size === 0;
+}
+
+/* Moving the one card beats re-rendering the board: a full repaint would collapse
+   any open ladder and throw away scroll position on every tap.                */
+function placeCard(card){
+  const target = isFav(card.dataset.hash)
+    ? document.querySelector('#board .favs .grid')
+    : document.querySelector(`#board .group[data-group="${card.dataset.group}"] .grid`);
+  const order = +card.dataset.order;
+  const after = [...target.children].find(c => +c.dataset.order > order);
+  target.insertBefore(card, after || null);
+}
+
+async function copyLink(btn){
+  try {
+    await navigator.clipboard.writeText(location.href);
+    btn.textContent = 'Link copied';
+    setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
+  } catch {
+    // Clipboard access can be refused; show the link so it can be copied by hand.
+    notice(`Share your teams with this link: <code>${location.href}</code>`);
+  }
+}
+
 function renderBoard(teams, venues){
   let W=0, D=0, L=0, top=0;
   const board = $('board');
-  let currentGroup = null, grid = null;
+  board.innerHTML = '';
 
-  for (const t of teams){
+  const favSection = makeSection('Your teams', true);
+  favSection.el.dataset.group = '__favs';
+  board.appendChild(favSection.el);
+  const copyBtn = favSection.el.querySelector('.copy');
+  copyBtn.addEventListener('click', () => copyLink(copyBtn));
+
+  const grids = new Map();
+  for (const g of GROUP_ORDER){
+    const s = makeSection(g, false);
+    s.el.dataset.group = g;
+    board.appendChild(s.el);
+    grids.set(g, s.grid);
+  }
+
+  teams.forEach((t, index) => {
     const a = t.a;
-    const g = groupOf(t.division);
-
-    if (g !== currentGroup){
-      currentGroup = g;
-      const section = document.createElement('section');
-      section.className = 'group';
-      const n = teams.filter(x => groupOf(x.division) === g).length;
-      section.innerHTML =
-        `<button class="group-head" aria-expanded="true">
-           <span class="tw">${g}</span>
-           <span class="count">${n} ${n === 1 ? 'team' : 'teams'}</span>
-           <span class="caret">&#9660;</span>
-         </button>
-         <div class="grid"></div>`;
-      const head = section.querySelector('.group-head');
-      head.addEventListener('click', () => {
-        const closed = section.classList.toggle('closed');
-        head.setAttribute('aria-expanded', !closed);
-      });
-      board.appendChild(section);
-      grid = section.querySelector('.grid');
-    }
 
     const recent = (a.recent_matches || []).filter(played).sort((m,n) => when(m.date) - when(n.date));
     const last = recent[recent.length - 1];
@@ -696,12 +834,20 @@ function renderBoard(teams, venues){
           <td>${b.points}</td></tr>`;
       }).join('');
 
+    const tag = teamTag(a, t.division);
+    const label = divisionLabel(a, t.division);
+    const on = isFav(a.team_hash_id);
+
     const card = document.createElement('div');
     card.className = 'team';
+    card.dataset.hash  = a.team_hash_id;
+    card.dataset.group = groupOf(t.division);
+    card.dataset.order = index;
     card.innerHTML = `
+     <div class="team-top">
       <button class="team-head" aria-expanded="false">
         <div class="row1">
-          <span class="division">${t.division}</span>
+          <span class="division">${t.division}${tag ? `<span class="tag">${tag}</span>` : ''}</span>
           <span class="pos ${a.position <= 4 ? 'top' : ''}">${a.position}<span style="font-size:12px">/${t.ladder.length}</span></span>
         </div>
         <div class="record">${a.played} played &#183; ${a.won}W ${a.drawn}D ${a.lost}L &#183; ${a.points} pts</div>
@@ -709,6 +855,10 @@ function renderBoard(teams, venues){
         ${lastLine}${nextLine}
         <div class="chev">Show results &amp; ladder</div>
       </button>
+      <button class="star${on ? ' on' : ''}" type="button"
+              aria-pressed="${on}"
+              aria-label="${on ? 'Unfavourite' : 'Favourite'} ${label}">${on ? '&#9733;' : '&#9734;'}</button>
+     </div>
       <div class="ladder">
         <div class="recents">
           <h4>Last five</h4>
@@ -728,9 +878,22 @@ function renderBoard(teams, venues){
       card.querySelector('.chev').textContent = open ? 'Hide results & ladder' : 'Show results & ladder';
     });
 
-    grid.appendChild(card);
-  }
+    const star = card.querySelector('.star');
+    star.addEventListener('click', () => {
+      const now = toggleFav(a.team_hash_id);
+      star.classList.toggle('on', now);
+      star.setAttribute('aria-pressed', now);
+      star.setAttribute('aria-label', `${now ? 'Unfavourite' : 'Favourite'} ${label}`);
+      star.innerHTML = now ? '&#9733;' : '&#9734;';
+      placeCard(card);
+      refreshSections();
+      if (state.teams) renderUpcoming(state.teams, state.venues);
+    });
 
+    (isFav(a.team_hash_id) ? favSection.grid : grids.get(card.dataset.group)).appendChild(card);
+  });
+
+  refreshSections();
   $('tW').textContent = W; $('tD').textContent = D; $('tL').textContent = L;
   $('tT').textContent = teams.length; $('tTop').textContent = top;
   $('tally').hidden = false;
@@ -746,6 +909,8 @@ function renderUpcoming(teams, venues){
     fixtures.push({
       date: when(next.date),
       division: t.division,
+      label: divisionLabel(t.a, t.division),
+      hash: t.a.team_hash_id,
       opponent: oppName(home ? next.away_team_name : next.home_team_name, t.division),
       home,
       venue: venueFor(venues, t.division, next)
@@ -764,21 +929,34 @@ function renderUpcoming(teams, venues){
     return;
   }
 
-  let html = '', day = null;
+  const row = (f, withDay) => `<div class="fx">
+      <div class="t">${fmtTime(f.date)}${withDay ? `<span class="dy">${fmtDate(f.date)}</span>` : ''}</div>
+      <div class="d">
+        <div class="dv">${f.label}</div>
+        <div class="op"><span class="ha ${f.home ? 'H' : 'A'}">${f.home ? 'H' : 'A'}</span>${f.opponent}</div>
+        <div class="gr">${venueNext(f.venue)}</div>
+      </div>
+    </div>`;
+
+  /* Favourites repeat here rather than being moved out of the list below. The
+     point of this panel is the unbroken run through the weekend — pulling
+     entries out of it would break that reading. Capped so it cannot take over
+     the panel on a phone.                                                     */
+  let html = '';
+  const pinned = fixtures.filter(f => isFav(f.hash)).slice(0, 5);
+  if (pinned.length){
+    html += '<div class="daybar pin">Your teams</div>';
+    html += pinned.map(f => row(f, true)).join('');
+  }
+
+  let day = null;
   for (const f of fixtures){
     const key = f.date.toDateString();
     if (key !== day){
       day = key;
       html += `<div class="daybar">${fmtDay(f.date)}</div>`;
     }
-    html += `<div class="fx">
-      <div class="t">${fmtTime(f.date)}</div>
-      <div class="d">
-        <div class="dv">${f.division}</div>
-        <div class="op"><span class="ha ${f.home ? 'H' : 'A'}">${f.home ? 'H' : 'A'}</span>${f.opponent}</div>
-        <div class="gr">${venueNext(f.venue)}</div>
-      </div>
-    </div>`;
+    html += row(f, false);
   }
   el.innerHTML = html;
 }
@@ -798,6 +976,7 @@ function renderUpcoming(teams, venues){
 })();
 
 $('refresh').addEventListener('click', load);
+loadFavs();       // must precede the first paint — the board is grouped by it
 load();
 </script>
 </body>

@@ -67,6 +67,14 @@ after changing the stored shape.
 Writes are wrapped in `try`/`catch` because Safari throws on `localStorage.setItem`
 in Private Browsing. Caching is an optimisation; nothing depends on it succeeding.
 
+### Favourites
+
+Starring a team pins it to a `Your teams` section above the board and to the top of
+Next up. The selection lives in `localStorage` and in a `?fav=` URL parameter, so a
+link can be shared and opens focused on the same teams. See
+[FAVOURITES.md](FAVOURITES.md) for the full behaviour and the reasoning behind the
+less obvious choices.
+
 ### Season rollover
 
 Update `CFG.season` in `index.html` when the season changes. The current value is
@@ -98,5 +106,5 @@ Base `https://mc-api.dribl.com/api`, public, no auth.
 | File | Purpose |
 |---|---|
 | `index.html` | The dashboard. Everything lives here. |
-| `FAVOURITES.md` | Spec for the favourites feature. Proposed, not yet built. |
+| `FAVOURITES.md` | Behaviour and rationale for the favourites feature. |
 | `.claude/launch.json` | Local preview server config. |
