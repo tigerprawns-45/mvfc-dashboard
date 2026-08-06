@@ -84,22 +84,13 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;back
 
 section.group{margin-bottom:10px}
 section.group[hidden]{display:none}
-.group-bar{
-  display:flex;align-items:center;gap:10px;
-  padding-bottom:6px;margin:22px 0 12px;border-bottom:1px solid var(--line);
-}
 .group-head{
-  flex:1;min-width:0;font:inherit;background:none;border:0;cursor:pointer;
-  display:flex;align-items:center;gap:10px;text-align:left;padding:0;
+  width:100%;font:inherit;background:none;border:0;cursor:pointer;
+  display:flex;align-items:center;gap:10px;text-align:left;
+  padding:0 0 6px;margin:22px 0 12px;border-bottom:1px solid var(--line);
 }
-.favs .group-bar{border-bottom-color:var(--amber)}
+.favs .group-head{border-bottom-color:var(--amber)}
 .favs .tw{color:var(--ink)}
-button.copy{
-  font:inherit;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-  background:none;color:var(--ink-soft);border:1px solid var(--line);border-radius:20px;
-  padding:9px 13px;cursor:pointer;flex:none;
-}
-button.copy:hover{border-color:var(--ink-faint);color:var(--ink)}
 .group-head .tw{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft)}
 .group-head .count{font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:2px 8px}
 .group-head .caret{margin-left:auto;color:var(--ink-faint);font-size:11px;transition:transform .15s}
@@ -689,14 +680,11 @@ function makeSection(title, isFavs){
   const section = document.createElement('section');
   section.className = 'group' + (isFavs ? ' favs' : '');
   section.innerHTML =
-    `<div class="group-bar">
-       <button class="group-head" aria-expanded="true">
-         <span class="tw">${title}</span>
-         <span class="count"></span>
-         <span class="caret">&#9660;</span>
-       </button>
-       ${isFavs ? '<button class="copy" type="button" hidden>Copy link</button>' : ''}
-     </div>
+    `<button class="group-head" aria-expanded="true">
+       <span class="tw">${title}</span>
+       <span class="count"></span>
+       <span class="caret">&#9660;</span>
+     </button>
      <div class="grid"></div>`;
   const head = section.querySelector('.group-head');
   head.addEventListener('click', () => {
@@ -714,8 +702,6 @@ function refreshSections(){
     s.hidden = n === 0;
     s.querySelector('.count').textContent = `${n} ${n === 1 ? 'team' : 'teams'}`;
   }
-  const copy = document.querySelector('#board .favs .copy');
-  if (copy) copy.hidden = favs.size === 0;
 }
 
 /* Moving the one card beats re-rendering the board: a full repaint would collapse
@@ -729,17 +715,6 @@ function placeCard(card){
   target.insertBefore(card, after || null);
 }
 
-async function copyLink(btn){
-  try {
-    await navigator.clipboard.writeText(location.href);
-    btn.textContent = 'Link copied';
-    setTimeout(() => { btn.textContent = 'Copy link'; }, 1800);
-  } catch {
-    // Clipboard access can be refused; show the link so it can be copied by hand.
-    notice(`Share your teams with this link: <code>${location.href}</code>`);
-  }
-}
-
 function renderBoard(teams, venues){
   let W=0, D=0, L=0, top=0;
   const board = $('board');
@@ -748,8 +723,6 @@ function renderBoard(teams, venues){
   const favSection = makeSection('Your teams', true);
   favSection.el.dataset.group = '__favs';
   board.appendChild(favSection.el);
-  const copyBtn = favSection.el.querySelector('.copy');
-  copyBtn.addEventListener('click', () => copyLink(copyBtn));
 
   const grids = new Map();
   for (const g of GROUP_ORDER){

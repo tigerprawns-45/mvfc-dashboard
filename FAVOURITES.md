@@ -81,10 +81,10 @@ season are ignored silently — a stale link degrades to fewer teams, not an err
 the address bar is always shareable and the back button is unaffected. When the last
 favourite is removed the parameter is dropped rather than left empty.
 
-A `Copy link` control sits in the `Your teams` heading, visible only when at least
-one team is favourited. It uses `navigator.clipboard` with a select-the-text
-fallback, since clipboard access needs a user gesture and a secure context — both
-satisfied here, but iOS has historically been inconsistent.
+There is deliberately **no `Copy link` button.** The address bar already holds the
+shareable URL at all times, and every mobile browser has share and copy built into
+its own chrome. A second control for the same job earned its space only if the URL
+were hidden, which it isn't.
 
 ---
 
