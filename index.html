@@ -110,6 +110,7 @@ section.group.closed .grid{display:none}
 .line b{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
 .meta{color:var(--ink-faint)}
 .venue{display:block;font-size:12px;color:var(--ink-faint);margin-top:1px}
+.tbc{font-style:italic;opacity:.8}
 .chev{font-size:11px;color:var(--ink-faint);margin-top:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 
 .ladder{display:none;border-top:1px solid var(--line);padding:4px 0 8px}
@@ -295,7 +296,12 @@ function outcome(m, hash){
   const them = home ? m.away_score : m.home_score;
   return { home, us, them, letter: us > them ? 'W' : us < them ? 'L' : 'D' };
 }
-const shortName = (full, division) => full.replace(division, ' ').replace(/\s+/g, ' ').trim();
+const shortName = (full, division) =>
+  String(full || '').replace(division, ' ').replace(/\s+/g, ' ').trim();
+/* An unallocated fixture arrives with an empty team name and a null hash, but the
+   other side still carries our hash — so home/away is known even when the
+   opponent isn't. Name the gap rather than printing "away to ".            */
+const oppName = (full, division) => shortName(full, division) || 'opponent TBC';
 const fmtDate = d => d.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
 const fmtDay  = d => d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
 const fmtTime = d => d.toLocaleTimeString('en-AU', { hour:'numeric', minute:'2-digit' }).replace(/\s/g,'').toLowerCase();
@@ -384,6 +390,13 @@ function venueLink(v){
   const url = `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`;
   return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
 }
+/* A future fixture with no venue is not a failed lookup — the division/kick-off
+   join resolves every scheduled match. Dribl genuinely ships ground_name null
+   while a match is unallocated (finals, or an opponent not yet decided), so say
+   so rather than leaving the line blank. Past matches stay blank instead: the
+   fixtures window starts 8 days back, so an older result legitimately has no
+   venue on hand and "TBC" would read as wrong.                              */
+const venueNext = v => venueLink(v) || '<span class="tbc">Ground TBC</span>';
 
 /* ---------- load ---------- */
 async function load(){
@@ -451,10 +464,12 @@ async function load(){
     box.className = 'status error';
     box.innerHTML =
       `<p><strong>Couldn't load from Dribl.</strong> ${err.message}</p>` +
-      `<p>If this says "Failed to fetch", the browser blocked the request. Serve the file over ` +
-      `<code>http://</code> instead of opening it directly — from this folder run ` +
-      `<code>python3 -m http.server 8000</code> and visit ` +
-      `<code>http://localhost:8000/manly-vale-dashboard.html</code>.</p>`;
+      `<p>If this says "Failed to fetch" and you opened this file straight from disk, ` +
+      `that's the cause — Safari blocks cross-origin requests from <code>file://</code> ` +
+      `however the server is configured. Use the hosted copy, or serve this folder over ` +
+      `<code>http://</code>: run <code>python3 -m http.server 8000</code> and visit ` +
+      `<code>http://localhost:8000/</code>.</p>` +
+      `<p>Otherwise Dribl may be down or the season identifier may have rolled over.</p>`;
   }
   $('refresh').disabled = false;
 }
@@ -522,12 +537,12 @@ function renderBoard(teams, venues){
     let nextLine = '<div class="line"><em>Next</em><span>Nothing scheduled</span></div>';
     if (next){
       const home = next.home_team_hash_id === a.team_hash_id;
-      const opp = shortName(home ? next.away_team_name : next.home_team_name, t.division);
+      const opp = oppName(home ? next.away_team_name : next.home_team_name, t.division);
       const d = when(next.date);
-      const v = venueLink(venueFor(venues, t.division, next));
+      const v = venueNext(venueFor(venues, t.division, next));
       nextLine = `<div class="line"><em>Next</em><span>${home ? 'vs' : 'away to'} ${opp}
                   <span class="meta">&#183; ${fmtDate(d)} ${fmtTime(d)}</span>
-                  ${v ? `<span class="venue">${v}</span>` : ''}</span></div>`;
+                  <span class="venue">${v}</span></span></div>`;
     }
 
     const ladderRows = t.ladder.slice()
@@ -588,7 +603,7 @@ function renderUpcoming(teams, venues){
     fixtures.push({
       date: when(next.date),
       division: t.division,
-      opponent: shortName(home ? next.away_team_name : next.home_team_name, t.division),
+      opponent: oppName(home ? next.away_team_name : next.home_team_name, t.division),
       home,
       venue: venueFor(venues, t.division, next)
     });
@@ -613,13 +628,12 @@ function renderUpcoming(teams, venues){
       day = key;
       html += `<div class="daybar">${fmtDay(f.date)}</div>`;
     }
-    const v = venueLink(f.venue);
     html += `<div class="fx">
       <div class="t">${fmtTime(f.date)}</div>
       <div class="d">
         <div class="dv">${f.division}</div>
         <div class="op"><span class="ha ${f.home ? 'H' : 'A'}">${f.home ? 'H' : 'A'}</span>${f.opponent}</div>
-        ${v ? `<div class="gr">${v}</div>` : ''}
+        <div class="gr">${venueNext(f.venue)}</div>
       </div>
     </div>`;
   }
