@@ -67,6 +67,13 @@ button.refresh:disabled{opacity:.45;cursor:default}
 .bar i{display:block;height:100%;width:0;background:var(--amber);transition:width .2s linear}
 .status.error{border-color:var(--loss)}
 .status.error strong{color:var(--loss)}
+
+.notice{
+  background:#FFF6E3;border:1px solid #F0DEB4;border-radius:var(--radius);
+  padding:9px 14px;margin:0 0 14px;font-size:13px;color:var(--ink-soft);
+}
+.notice.warn{background:#FBECE9;border-color:#EDC9C2}
+.notice strong{color:var(--ink)}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--paper);padding:1px 5px;border-radius:4px}
 
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 318px;gap:22px;align-items:start}
@@ -114,6 +121,16 @@ section.group.closed .grid{display:none}
 .chev{font-size:11px;color:var(--ink-faint);margin-top:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 
 .ladder{display:none;border-top:1px solid var(--line);padding:4px 0 8px}
+.recents{padding:2px 15px 8px;border-bottom:1px solid var(--line);margin-bottom:2px}
+.recents h4{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;margin:8px 0 2px}
+.rr{display:flex;align-items:center;gap:7px;padding:5px 0;border-top:1px solid #F0F3F6;font-size:12.5px}
+.rr:first-of-type{border-top:0}
+.rr i.rl{width:18px;height:18px;border-radius:3px;font-style:normal;font-size:10px;font-weight:600;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.rr i.rl.W{background:var(--win)} .rr i.rl.D{background:var(--draw)} .rr i.rl.L{background:var(--loss)}
+.rr b{font-variant-numeric:tabular-nums;font-weight:600;flex:none;min-width:28px}
+.rr .ro{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft)}
+.rr .rd{margin-left:auto;color:var(--ink-faint);font-size:11.5px;flex:none;padding-left:6px}
+.rr.none{color:var(--ink-faint);font-size:12.5px}
 .team.open .ladder{display:block}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;text-align:right;padding:7px 5px 5px}
@@ -193,6 +210,8 @@ footer{margin-top:44px;font-size:11.5px;color:var(--ink-faint);line-height:1.6}
   <div><b id="tTop">0</b><span>Top four</span></div>
 </div>
 
+<div class="notice" id="notice" hidden></div>
+
 <div class="status" id="status">
   <p id="statusText">Finding Manly Vale teams…</p>
   <div class="bar"><i id="barFill"></i></div>
@@ -228,7 +247,8 @@ const CFG = {
   club:   'AnmYn0zNzG',        // Manly Vale FC
   clubCode: 'MVFC',
   concurrency: 6,
-  maxFixturePages: 60
+  maxFixturePages: 60,
+  cacheVersion: 1             // bump to invalidate every saved copy after a shape change
 };
 
 const $ = id => document.getElementById(id);
@@ -398,18 +418,109 @@ function venueLink(v){
    venue on hand and "TBC" would read as wrong.                              */
 const venueNext = v => venueLink(v) || '<span class="tbc">Ground TBC</span>';
 
+/* ---------- saved copy ----------
+   A full load is ~90 requests, which on phone data means staring at a progress bar
+   at the ground on a Saturday morning. So the last good result is kept in
+   localStorage and painted immediately, then replaced when the live data lands.
+   It also means a Dribl outage or a dead patch of reception degrades to slightly
+   stale numbers instead of an error page.
+
+   Only the fields actually rendered are stored. The raw ladder rows carry
+   recent_matches and upcoming_matches for every team in every division, which is
+   megabytes of data we never look at — well past the localStorage quota.        */
+
+const CACHE_KEY = `mvfc:v${CFG.cacheVersion}:${CFG.season}`;
+
+const slimMatch = m => ({
+  date: m.date, status: m.status,
+  home_score: m.home_score, away_score: m.away_score,
+  home_team_hash_id: m.home_team_hash_id, away_team_hash_id: m.away_team_hash_id,
+  home_team_name: m.home_team_name, away_team_name: m.away_team_name
+});
+const slimRow = r => ({
+  team_hash_id: r.team_hash_id, team_name: r.team_name, position: r.position,
+  played: r.played, won: r.won, drawn: r.drawn, lost: r.lost,
+  goal_difference: r.goal_difference, points: r.points
+});
+
+function saveCache(teams, venues){
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      saved: Date.now(),
+      teams: teams.map(t => ({
+        division: t.division,
+        a: { ...slimRow(t.a),
+             recent_matches:   (t.a.recent_matches   || []).map(slimMatch),
+             upcoming_matches: (t.a.upcoming_matches || []).map(slimMatch) },
+        ladder: t.ladder.map(r => ({ attributes: slimRow(r.attributes) }))
+      })),
+      venues: [...venues]
+    }));
+  } catch { /* Safari private browsing throws on write; caching is optional */ }
+}
+
+function readCache(){
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (!c || !Array.isArray(c.teams) || !c.teams.length) return null;
+    return { saved: c.saved, teams: c.teams, venues: new Map(c.venues || []) };
+  } catch { return null; }
+}
+
+function ago(ts){
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1)  return 'just now';
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24)  return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+const stampAt = ts => 'Updated ' + new Date(ts).toLocaleString('en-AU',
+  { weekday:'short', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' });
+
+function notice(html, kind){
+  const el = $('notice');
+  if (!html){ el.hidden = true; return; }
+  el.className = 'notice' + (kind ? ' ' + kind : '');
+  el.innerHTML = html;
+  el.hidden = false;
+}
+
 /* ---------- load ---------- */
-async function load(){
-  $('refresh').disabled = true;
+function paint(teams, venues){
   $('board').innerHTML = '';
   $('upcoming').innerHTML = '';
-  $('layout').hidden = true;
-  $('tally').hidden = true;
+  renderBoard(teams, venues);
+  renderUpcoming(teams, venues);
+  $('status').hidden = true;
+  $('layout').hidden = false;
+}
+
+async function load(){
+  $('refresh').disabled = true;
 
   const box = $('status');
-  box.hidden = false;
-  box.className = 'status';
-  box.innerHTML = '<p id="statusText">Finding Manly Vale teams…</p><div class="bar"><i id="barFill"></i></div>';
+  const cached = readCache();
+
+  if (cached){
+    // Paint the saved copy first so there is something to read immediately, then
+    // let the live fetch replace it underneath.
+    paint(cached.teams, cached.venues);
+    $('stamp').textContent = stampAt(cached.saved);
+    notice(`Showing data saved ${ago(cached.saved)} — checking for updates…`);
+  } else {
+    $('board').innerHTML = '';
+    $('upcoming').innerHTML = '';
+    $('layout').hidden = true;
+    $('tally').hidden = true;
+    notice(null);
+    box.hidden = false;
+    box.className = 'status';
+    box.innerHTML = '<p id="statusText">Finding Manly Vale teams…</p><div class="bar"><i id="barFill"></i></div>';
+  }
 
   try {
     const venuesPromise = Promise.race([
@@ -428,7 +539,10 @@ async function load(){
              .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
     }
 
-    $('statusText').textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
+    // These only exist on a cold load; when a saved copy is already on screen the
+    // refresh happens quietly behind it.
+    const statusText = $('statusText'), barFill = $('barFill');
+    if (statusText) statusText.textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
 
     const found = await pool(divisions, CFG.concurrency, async d => {
       const rows = await api('/ladders', {
@@ -437,7 +551,7 @@ async function load(){
       });
       const ours = rows.filter(r => r.attributes.club_code === CFG.clubCode);
       return ours.length ? { division:d.title, rows, ours } : null;
-    }, (done, total) => { $('barFill').style.width = `${Math.round(done/total*100)}%`; });
+    }, (done, total) => { if (barFill) barFill.style.width = `${Math.round(done/total*100)}%`; });
 
     const teams = [];
     for (const f of found)
@@ -454,22 +568,27 @@ async function load(){
 
     const venues = await venuesPromise;
 
-    renderBoard(teams, venues);
-    renderUpcoming(teams, venues);
-    box.hidden = true;
-    $('layout').hidden = false;
-    $('stamp').textContent = 'Updated ' + new Date().toLocaleString('en-AU',
-      { weekday:'short', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' });
+    paint(teams, venues);
+    saveCache(teams, venues);
+    notice(null);
+    $('stamp').textContent = stampAt(Date.now());
   } catch (err){
-    box.className = 'status error';
-    box.innerHTML =
-      `<p><strong>Couldn't load from Dribl.</strong> ${err.message}</p>` +
-      `<p>If this says "Failed to fetch" and you opened this file straight from disk, ` +
-      `that's the cause — Safari blocks cross-origin requests from <code>file://</code> ` +
-      `however the server is configured. Use the hosted copy, or serve this folder over ` +
-      `<code>http://</code>: run <code>python3 -m http.server 8000</code> and visit ` +
-      `<code>http://localhost:8000/</code>.</p>` +
-      `<p>Otherwise Dribl may be down or the season identifier may have rolled over.</p>`;
+    if (cached){
+      // Something is already on screen and readable. Say it's stale; don't wipe it.
+      notice(`<strong>Couldn't reach Dribl just now.</strong> Showing the copy saved ` +
+             `${ago(cached.saved)}. Try Refresh when you have signal.`, 'warn');
+    } else {
+      box.hidden = false;
+      box.className = 'status error';
+      box.innerHTML =
+        `<p><strong>Couldn't load from Dribl.</strong> ${err.message}</p>` +
+        `<p>If this says "Failed to fetch" and you opened this file straight from disk, ` +
+        `that's the cause — Safari blocks cross-origin requests from <code>file://</code> ` +
+        `however the server is configured. Use the hosted copy, or serve this folder over ` +
+        `<code>http://</code>: run <code>python3 -m http.server 8000</code> and visit ` +
+        `<code>http://localhost:8000/</code>.</p>` +
+        `<p>Otherwise Dribl may be down or the season identifier may have rolled over.</p>`;
+    }
   }
   $('refresh').disabled = false;
 }
@@ -515,13 +634,33 @@ function renderBoard(teams, venues){
     }
     if (a.position <= 4) top++;
 
-    const form = recent.slice(-5).map(m => {
+    /* The chips used to carry their opponent and date in a title attribute, which
+       does not exist on touch — on a phone that detail was simply unreachable. The
+       same five matches are now also listed in the expandable panel below, which
+       sits outside the header button and so can hold real content.            */
+    const last5 = recent.slice(-5).map(m => {
       const o = outcome(m, a.team_hash_id);
-      const opp = shortName(o.home ? m.away_team_name : m.home_team_name, t.division);
-      return `<div class="fm" title="${o.home ? 'vs' : 'away to'} ${opp} &#183; ${fmtDate(when(m.date))}">
+      return { m, o, opp: oppName(o.home ? m.away_team_name : m.home_team_name, t.division) };
+    });
+
+    const form = last5.map(({ m, o, opp }) => {
+      const label = `${o.letter === 'W' ? 'Won' : o.letter === 'L' ? 'Lost' : 'Drew'} `
+                  + `${o.us}-${o.them} ${o.home ? 'vs' : 'away to'} ${opp}, ${fmtDate(when(m.date))}`;
+      return `<div class="fm" title="${label}" aria-label="${label}">
                 <i class="${o.letter}">${o.letter}</i><b>${o.us}&#8211;${o.them}</b>
               </div>`;
     }).join('') || '<div class="fm"><i class="X">&#8211;</i><b>&nbsp;</b></div>';
+
+    const recentList = last5.length
+      ? last5.slice().reverse().map(({ m, o, opp }) => `
+          <div class="rr">
+            <i class="rl ${o.letter}">${o.letter}</i>
+            <b>${o.us}&#8211;${o.them}</b>
+            <span class="ha ${o.home ? 'H' : 'A'}">${o.home ? 'H' : 'A'}</span>
+            <span class="ro">${opp}</span>
+            <span class="rd">${fmtDate(when(m.date))}</span>
+          </div>`).join('')
+      : '<div class="rr none">No completed matches yet</div>';
 
     let lastLine = '<div class="line"><em>Last</em><span>No completed matches yet</span></div>';
     if (last){
@@ -568,9 +707,13 @@ function renderBoard(teams, venues){
         <div class="record">${a.played} played &#183; ${a.won}W ${a.drawn}D ${a.lost}L &#183; ${a.points} pts</div>
         <div class="form">${form}</div>
         ${lastLine}${nextLine}
-        <div class="chev">Show ladder</div>
+        <div class="chev">Show results &amp; ladder</div>
       </button>
       <div class="ladder">
+        <div class="recents">
+          <h4>Last five</h4>
+          ${recentList}
+        </div>
         <table>
           <thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr></thead>
           <tbody>${ladderRows}</tbody>
@@ -582,7 +725,7 @@ function renderBoard(teams, venues){
       if (e.target.closest('a')) return;          // let ground links through
       const open = card.classList.toggle('open');
       btn.setAttribute('aria-expanded', open);
-      card.querySelector('.chev').textContent = open ? 'Hide ladder' : 'Show ladder';
+      card.querySelector('.chev').textContent = open ? 'Hide results & ladder' : 'Show results & ladder';
     });
 
     grid.appendChild(card);

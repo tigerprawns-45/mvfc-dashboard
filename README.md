@@ -52,6 +52,21 @@ Dribl exposes no way to list a club's teams. Instead the page:
 
 That is roughly 90 requests per load, run six at a time.
 
+### Saved copy
+
+The last successful result is kept in `localStorage` and painted immediately on the
+next visit — about 240 ms to first card, against several seconds for a cold load —
+then replaced when the live data arrives. If Dribl can't be reached, the saved copy
+stays on screen with a warning rather than the page failing empty.
+
+Only rendered fields are stored, which keeps it near 160 KB. Storing the raw ladder
+rows would blow the quota: each row carries `recent_matches` and `upcoming_matches`
+for every team in the division, none of which is displayed. Bump `CFG.cacheVersion`
+after changing the stored shape.
+
+Writes are wrapped in `try`/`catch` because Safari throws on `localStorage.setItem`
+in Private Browsing. Caching is an optimisation; nothing depends on it succeeding.
+
 ### Season rollover
 
 Update `CFG.season` in `index.html` when the season changes. The current value is
@@ -83,4 +98,5 @@ Base `https://mc-api.dribl.com/api`, public, no auth.
 | File | Purpose |
 |---|---|
 | `index.html` | The dashboard. Everything lives here. |
+| `FAVOURITES.md` | Spec for the favourites feature. Proposed, not yet built. |
 | `.claude/launch.json` | Local preview server config. |
