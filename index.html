@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manly Vale FC — Results &amp; Ladders</title>
+<title>Club Results &amp; Ladders</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -51,6 +51,14 @@ button.refresh{
 }
 button.refresh:hover{background:#243356}
 button.refresh:disabled{opacity:.45;cursor:default}
+select.picker{
+  font:inherit;font-weight:600;font-size:13px;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);
+  padding:8px 12px;border-radius:var(--radius);cursor:pointer;
+  max-width:min(58vw,260px);
+}
+select.picker:hover{border-color:var(--ink-faint)}
+select.picker:disabled{opacity:.5;cursor:default}
 :focus-visible{outline:2.5px solid var(--amber);outline-offset:2px}
 
 .tally{display:flex;flex-wrap:wrap;border:1px solid var(--line);background:var(--card);border-radius:var(--radius);overflow:hidden;margin:16px 0 22px}
@@ -110,7 +118,6 @@ section.group.closed .grid{display:none}
 .line b{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
 .meta{color:var(--ink-faint)}
 .venue{display:block;font-size:12px;color:var(--ink-faint);margin-top:1px}
-.tbc{font-style:italic;opacity:.8}
 .chev{font-size:11px;color:var(--ink-faint);margin-top:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 
 .ladder{display:none;border-top:1px solid var(--line);padding:4px 0 8px}
@@ -173,13 +180,14 @@ footer{margin-top:44px;font-size:11.5px;color:var(--ink-faint);line-height:1.6}
 
 <header class="masthead">
   <div class="brand">
-    <img src="https://ocean.dribl.com/c063b4747b864cf587d6f3ac15c28c48" alt="" onerror="this.style.display='none'">
+    <img id="clubLogo" src="" alt="" hidden>
     <div>
-      <h1>Manly Vale FC</h1>
-      <div class="sub">Competitive teams · U12 and up</div>
+      <h1 id="clubName">Loading…</h1>
+      <div class="sub" id="clubSub">Reading the match centre</div>
     </div>
   </div>
   <div class="masthead-actions">
+    <select class="picker" id="clubPicker" aria-label="Choose a club" hidden></select>
     <div class="stamp" id="stamp"></div>
     <button class="refresh" id="refresh" disabled>Refresh</button>
   </div>
@@ -194,7 +202,7 @@ footer{margin-top:44px;font-size:11.5px;color:var(--ink-faint);line-height:1.6}
 </div>
 
 <div class="status" id="status">
-  <p id="statusText">Finding Manly Vale teams…</p>
+  <p id="statusText">Loading competitions…</p>
   <div class="bar"><i id="barFill"></i></div>
 </div>
 
@@ -213,22 +221,47 @@ footer{margin-top:44px;font-size:11.5px;color:var(--ink-faint);line-height:1.6}
 </div>
 
 <footer>
-  Live from the MWFA Dribl match centre. Divisions appear when their ladder is published —
-  U12 and above. Latest result is the most recent completed match; washouts and cancellations are skipped.
+  Live from the Dribl match centre. Divisions appear only when their ladder is published.
+  Latest result is the most recent completed match; washouts and cancellations are skipped.
   Grounds come from the club fixture list; tap one to open it in maps.
+  Switch clubs from the dropdown, or link straight to one with <code>?club=CODE</code>.
+  <div style="margin-top:10px">
+    Deeplink for current club:
+    <a id="deeplinkAnchor" href="#" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all"></a>
+    <button id="deeplinkCopy" onclick="copyDeeplink()" style="margin-left:6px;font-size:11px;padding:1px 7px;cursor:pointer;border:1px solid var(--line);border-radius:4px;background:var(--card)">Copy</button>
+  </div>
 </footer>
 
 </div>
 
 <script>
+/* =====================================================================
+   CONFIG
+   Everything club-specific now lives in state, not in code. Tenant,
+   season and starting club can all be overridden from the URL, e.g.
+     ?club=MVFC
+     ?club=SEAF&season=bam17yAKwX
+     ?tenant=kbam1QjmwX&season=bam17yAKwX&club=NBFC
+   ===================================================================== */
 const CFG = {
   api: 'https://mc-api.dribl.com/api',
   tenant: 'kbam1QjmwX',        // Manly Warringah Football Association
   season: 'bam17yAKwX',        // Winter 2026 — update for a new season
-  club:   'AnmYn0zNzG',        // Manly Vale FC
-  clubCode: 'MVFC',
+  defaultClub: 'MVFC',         // club_code used when the URL says nothing
+  logoBase: 'https://ocean.dribl.com/',
   concurrency: 6,
   maxFixturePages: 60
+};
+
+const PARAMS = new URLSearchParams(location.search);
+if (PARAMS.get('tenant')) CFG.tenant = PARAMS.get('tenant').trim();
+if (PARAMS.get('season')) CFG.season = PARAMS.get('season').trim();
+
+const state = {
+  clubCode: (PARAMS.get('club') || CFG.defaultClub).trim().toUpperCase(),
+  clubs: new Map(),   // club_code -> { code, name, hash, logo, teams }
+  scan: null,         // cached ladder data for every division
+  venueCache: new Map()
 };
 
 const $ = id => document.getElementById(id);
@@ -255,6 +288,83 @@ async function pool(items, limit, fn, onTick){
   }
   await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
   return out.filter(Boolean);
+}
+
+/* ---------- shape helpers ----------
+   Dribl is inconsistent: /list/* returns flat objects while /ladders and
+   /fixtures wrap everything in .attributes. And field names for club logos
+   vary between feeds, so read defensively rather than assuming one key.  */
+const attrsOf = r => (r && typeof r === 'object' && r.attributes) ? r.attributes : (r || {});
+function pick(obj, ...keys){
+  for (const k of keys){
+    const v = obj[k];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return null;
+}
+
+/* ---------- club branding ---------- */
+function logoUrl(a){
+  const raw = pick(a,
+    'club_logo','club_logo_url','club_image','club_badge',
+    'logo','logo_url','image','image_url','avatar','badge'
+  );
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (/^https?:\/\//i.test(s)) return s;                 // already absolute
+  if (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._\/-]+$/.test(s)) return CFG.logoBase + s.replace(/^\/+/, '');
+  if (/^[A-Za-z0-9]{16,}$/.test(s)) return CFG.logoBase + s;   // bare Dribl asset hash
+  return null;
+}
+
+function placeholderLogo(name){
+  const initials = String(name || '?')
+    .replace(/[^A-Za-z ]/g, ' ').trim().split(/\s+/)
+    .slice(0, 3).map(w => w[0]).join('').toUpperCase() || '?';
+  const size = initials.length > 2 ? 20 : 26;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" rx="13" fill="#111C33"/>` +
+    `<text x="32" y="41" text-anchor="middle" fill="#EEF1F5" ` +
+    `font-family="Barlow Condensed,Impact,sans-serif" font-size="${size}" font-weight="700">${initials}</text>` +
+    `</svg>`;
+  return 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
+/* Try the club's real Dribl logo; quietly fall back to initials if the
+   asset 404s or the host blocks hotlinking.                              */
+function applyBrand(club){
+  const img = $('clubLogo');
+  const fallback = placeholderLogo(club.name);
+  img.onerror = () => { img.onerror = null; img.src = fallback; };
+  img.src = club.logo || fallback;
+  img.alt = `${club.name} crest`;
+  img.hidden = false;
+
+  $('clubName').textContent = club.name;
+  $('clubSub').textContent = `${club.teams} ${club.teams === 1 ? 'team' : 'teams'} · published ladders`;
+  document.title = `${club.name} — Results & Ladders`;
+}
+
+function syncUrl(){
+  const p = new URLSearchParams();
+  p.set('club', state.clubCode);
+  if (PARAMS.get('tenant')) p.set('tenant', CFG.tenant);
+  if (PARAMS.get('season')) p.set('season', CFG.season);
+  history.replaceState(null, '', `${location.pathname}?${p}`);
+  const full = `${location.origin}${location.pathname}?${p}`;
+  const a = document.getElementById('deeplinkAnchor');
+  if (a){ a.href = full; a.textContent = full; }
+}
+function copyDeeplink(){
+  const a = document.getElementById('deeplinkAnchor');
+  if (!a) return;
+  navigator.clipboard.writeText(a.href).then(() => {
+    const btn = document.getElementById('deeplinkCopy');
+    const prev = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = prev; }, 1500);
+  });
 }
 
 /* ---------- grouping / ordering ---------- */
@@ -296,12 +406,7 @@ function outcome(m, hash){
   const them = home ? m.away_score : m.home_score;
   return { home, us, them, letter: us > them ? 'W' : us < them ? 'L' : 'D' };
 }
-const shortName = (full, division) =>
-  String(full || '').replace(division, ' ').replace(/\s+/g, ' ').trim();
-/* An unallocated fixture arrives with an empty team name and a null hash, but the
-   other side still carries our hash — so home/away is known even when the
-   opponent isn't. Name the gap rather than printing "away to ".            */
-const oppName = (full, division) => shortName(full, division) || 'opponent TBC';
+const shortName = (full, division) => full.replace(division, ' ').replace(/\s+/g, ' ').trim();
 const fmtDate = d => d.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
 const fmtDay  = d => d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
 const fmtTime = d => d.toLocaleTimeString('en-AU', { hour:'numeric', minute:'2-digit' }).replace(/\s/g,'').toLowerCase();
@@ -324,11 +429,13 @@ function makeCursor(date){
   return btoa(json).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-async function fetchVenues(){
+async function fetchVenues(clubHash){
   const map = new Map();
+  if (!clubHash) return map;          // no hash, no ground names — degrade quietly
+
   const now = Date.now();
   const horizon = now + 28 * 864e5;
-  const base = { tenant: CFG.tenant, season: CFG.season, club: CFG.club };
+  const base = { tenant: CFG.tenant, season: CFG.season, club: clubHash };
 
   let cursor = makeCursor(new Date(now - 8 * 864e5));
   let seeded = true, pages = 0;
@@ -390,13 +497,104 @@ function venueLink(v){
   const url = `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}`;
   return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
 }
-/* A future fixture with no venue is not a failed lookup — the division/kick-off
-   join resolves every scheduled match. Dribl genuinely ships ground_name null
-   while a match is unallocated (finals, or an opponent not yet decided), so say
-   so rather than leaving the line blank. Past matches stay blank instead: the
-   fixtures window starts 8 days back, so an older result legitimately has no
-   venue on hand and "TBC" would read as wrong.                              */
-const venueNext = v => venueLink(v) || '<span class="tbc">Ground TBC</span>';
+
+/* ---------- status box ---------- */
+function showStatus(text){
+  const box = $('status');
+  box.hidden = false;
+  box.className = 'status';
+  box.innerHTML = `<p id="statusText">${text}</p><div class="bar"><i id="barFill"></i></div>`;
+}
+function setStatus(text){
+  const el = $('statusText');
+  if (el) el.textContent = text;
+}
+function showError(html){
+  const box = $('status');
+  box.hidden = false;
+  box.className = 'status error';
+  box.innerHTML = html;
+}
+
+/* ---------- scan every division once ----------
+   One pass gives us the ladders for the whole association, which means the
+   club list builds itself from real data and switching clubs afterwards
+   needs no refetch.                                                       */
+async function scanDivisions(){
+  const comps = await api('/list/competitions', {
+    disable_paging:true, tenant:CFG.tenant, season:CFG.season
+  });
+
+  const divisions = [];
+  for (const c of comps){
+    const leagues = await api('/list/leagues', {
+      disable_paging:true, tenant:CFG.tenant, season:CFG.season, competition:c.id
+    });
+    leagues.filter(l => l.ladder_access === 'public')
+           .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
+  }
+
+  if (!divisions.length) throw new Error('No divisions with public ladders in this season.');
+  setStatus(`Reading ${divisions.length} published ladders…`);
+
+  return pool(divisions, CFG.concurrency, async d => {
+    const rows = await api('/ladders', {
+      date_range:'default', ladder_type:'regular', require_pools:true,
+      tenant:CFG.tenant, season:CFG.season, competition:d.competition, league:d.id
+    });
+    return rows.length ? { division:d.title, rows } : null;
+  }, (done, total) => {
+    const bar = $('barFill');
+    if (bar) bar.style.width = `${Math.round(done/total*100)}%`;
+  });
+}
+
+/* Every club that appears anywhere in the association's ladders. */
+function buildClubRegistry(scan){
+  const map = new Map();
+  for (const d of scan){
+    for (const r of d.rows){
+      const a = attrsOf(r);
+      const code = a.club_code;
+      if (!code) continue;
+      let c = map.get(code);
+      if (!c){ c = { code, name:null, hash:null, logo:null, teams:0 }; map.set(code, c); }
+      c.teams++;
+      c.name = c.name || pick(a, 'club_name', 'club_title', 'club');
+      c.hash = c.hash || pick(a, 'club_hash_id', 'club_id');
+      c.logo = c.logo || logoUrl(a);
+    }
+  }
+  for (const c of map.values()) if (!c.name) c.name = c.code;
+  return map;
+}
+
+function teamsFor(scan, code){
+  const teams = [];
+  for (const d of scan){
+    for (const r of d.rows){
+      const a = attrsOf(r);
+      if (a.club_code !== code) continue;
+      teams.push({ division: d.division, a, ladder: d.rows });
+    }
+  }
+  teams.sort((x,y) =>
+    GROUP_ORDER.indexOf(groupOf(x.division)) - GROUP_ORDER.indexOf(groupOf(y.division)) ||
+    ageRank(x.division) - ageRank(y.division) ||
+    x.division.localeCompare(y.division)
+  );
+  return teams;
+}
+
+function fillPicker(){
+  const sel = $('clubPicker');
+  const clubs = [...state.clubs.values()].sort((a,b) => a.name.localeCompare(b.name));
+  sel.innerHTML = clubs
+    .map(c => `<option value="${c.code}">${c.name} (${c.teams})</option>`)
+    .join('');
+  sel.value = state.clubCode;
+  sel.hidden = false;
+}
 
 /* ---------- load ---------- */
 async function load(){
@@ -405,73 +603,67 @@ async function load(){
   $('upcoming').innerHTML = '';
   $('layout').hidden = true;
   $('tally').hidden = true;
+  state.venueCache.clear();
 
-  const box = $('status');
-  box.hidden = false;
-  box.className = 'status';
-  box.innerHTML = '<p id="statusText">Finding Manly Vale teams…</p><div class="bar"><i id="barFill"></i></div>';
+  showStatus('Loading competitions…');
 
   try {
-    const venuesPromise = Promise.race([
-      fetchVenues(),
-      new Promise(r => setTimeout(() => r(new Map()), 20000))
-    ]).catch(() => new Map());
+    state.scan = await scanDivisions();
+    state.clubs = buildClubRegistry(state.scan);
 
-    const comps = await api('/list/competitions', { disable_paging:true, tenant:CFG.tenant, season:CFG.season });
-
-    const divisions = [];
-    for (const c of comps){
-      const leagues = await api('/list/leagues', {
-        disable_paging:true, tenant:CFG.tenant, season:CFG.season, competition:c.id
-      });
-      leagues.filter(l => l.ladder_access === 'public')
-             .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
+    if (!state.clubs.size) throw new Error('No clubs found in the published ladders.');
+    if (!state.clubs.has(state.clubCode)){
+      state.clubCode = [...state.clubs.keys()].sort()[0];
     }
-
-    $('statusText').textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
-
-    const found = await pool(divisions, CFG.concurrency, async d => {
-      const rows = await api('/ladders', {
-        date_range:'default', ladder_type:'regular', require_pools:true,
-        tenant:CFG.tenant, season:CFG.season, competition:d.competition, league:d.id
-      });
-      const ours = rows.filter(r => r.attributes.club_code === CFG.clubCode);
-      return ours.length ? { division:d.title, rows, ours } : null;
-    }, (done, total) => { $('barFill').style.width = `${Math.round(done/total*100)}%`; });
-
-    const teams = [];
-    for (const f of found)
-      for (const e of f.ours)
-        teams.push({ division:f.division, a:e.attributes, ladder:f.rows });
-
-    if (!teams.length) throw new Error('No Manly Vale teams found in the published divisions.');
-
-    teams.sort((x,y) =>
-      GROUP_ORDER.indexOf(groupOf(x.division)) - GROUP_ORDER.indexOf(groupOf(y.division)) ||
-      ageRank(x.division) - ageRank(y.division) ||
-      x.division.localeCompare(y.division)
-    );
-
-    const venues = await venuesPromise;
-
-    renderBoard(teams, venues);
-    renderUpcoming(teams, venues);
-    box.hidden = true;
-    $('layout').hidden = false;
-    $('stamp').textContent = 'Updated ' + new Date().toLocaleString('en-AU',
-      { weekday:'short', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' });
+    fillPicker();
+    await selectClub(state.clubCode);
   } catch (err){
-    box.className = 'status error';
-    box.innerHTML =
+    showError(
       `<p><strong>Couldn't load from Dribl.</strong> ${err.message}</p>` +
-      `<p>If this says "Failed to fetch" and you opened this file straight from disk, ` +
-      `that's the cause — Safari blocks cross-origin requests from <code>file://</code> ` +
-      `however the server is configured. Use the hosted copy, or serve this folder over ` +
-      `<code>http://</code>: run <code>python3 -m http.server 8000</code> and visit ` +
-      `<code>http://localhost:8000/</code>.</p>` +
-      `<p>Otherwise Dribl may be down or the season identifier may have rolled over.</p>`;
+      `<p>If this says "Failed to fetch", the browser blocked the request — either ` +
+      `CORS, or the page was opened straight off disk. Serve it over <code>http://</code>: ` +
+      `from this folder run <code>python3 -m http.server 8000</code> and visit ` +
+      `<code>http://localhost:8000/</code>.</p>`
+    );
   }
   $('refresh').disabled = false;
+}
+
+async function selectClub(code){
+  state.clubCode = code;
+  const club = state.clubs.get(code);
+  applyBrand(club);
+  syncUrl();
+
+  $('board').innerHTML = '';
+  $('upcoming').innerHTML = '';
+  $('layout').hidden = true;
+  $('tally').hidden = true;
+
+  const teams = teamsFor(state.scan, code);
+  if (!teams.length){
+    showError(`<p><strong>No teams for ${club.name}.</strong> ` +
+              `This club has no entries in the divisions with published ladders.</p>`);
+    return;
+  }
+
+  showStatus(`Finding grounds for ${club.name}…`);
+
+  let venues = state.venueCache.get(code);
+  if (!venues){
+    venues = await Promise.race([
+      fetchVenues(club.hash),
+      new Promise(r => setTimeout(() => r(new Map()), 20000))
+    ]).catch(() => new Map());
+    state.venueCache.set(code, venues);
+  }
+
+  renderBoard(teams, venues);
+  renderUpcoming(teams, venues);
+  $('status').hidden = true;
+  $('layout').hidden = false;
+  $('stamp').textContent = 'Updated ' + new Date().toLocaleString('en-AU',
+    { weekday:'short', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' });
 }
 
 /* ---------- board ---------- */
@@ -537,12 +729,12 @@ function renderBoard(teams, venues){
     let nextLine = '<div class="line"><em>Next</em><span>Nothing scheduled</span></div>';
     if (next){
       const home = next.home_team_hash_id === a.team_hash_id;
-      const opp = oppName(home ? next.away_team_name : next.home_team_name, t.division);
+      const opp = shortName(home ? next.away_team_name : next.home_team_name, t.division);
       const d = when(next.date);
-      const v = venueNext(venueFor(venues, t.division, next));
+      const v = venueLink(venueFor(venues, t.division, next));
       nextLine = `<div class="line"><em>Next</em><span>${home ? 'vs' : 'away to'} ${opp}
                   <span class="meta">&#183; ${fmtDate(d)} ${fmtTime(d)}</span>
-                  <span class="venue">${v}</span></span></div>`;
+                  ${v ? `<span class="venue">${v}</span>` : ''}</span></div>`;
     }
 
     const ladderRows = t.ladder.slice()
@@ -603,7 +795,7 @@ function renderUpcoming(teams, venues){
     fixtures.push({
       date: when(next.date),
       division: t.division,
-      opponent: oppName(home ? next.away_team_name : next.home_team_name, t.division),
+      opponent: shortName(home ? next.away_team_name : next.home_team_name, t.division),
       home,
       venue: venueFor(venues, t.division, next)
     });
@@ -628,12 +820,13 @@ function renderUpcoming(teams, venues){
       day = key;
       html += `<div class="daybar">${fmtDay(f.date)}</div>`;
     }
+    const v = venueLink(f.venue);
     html += `<div class="fx">
       <div class="t">${fmtTime(f.date)}</div>
       <div class="d">
         <div class="dv">${f.division}</div>
         <div class="op"><span class="ha ${f.home ? 'H' : 'A'}">${f.home ? 'H' : 'A'}</span>${f.opponent}</div>
-        <div class="gr">${venueNext(f.venue)}</div>
+        ${v ? `<div class="gr">${v}</div>` : ''}
       </div>
     </div>`;
   }
@@ -653,6 +846,13 @@ function renderUpcoming(teams, venues){
     toggle.setAttribute('aria-expanded', !closed);
   });
 })();
+
+/* Switching club reuses the cached scan, so it re-renders instantly. */
+$('clubPicker').addEventListener('change', e => {
+  const sel = e.target;
+  sel.disabled = true;
+  selectClub(sel.value).finally(() => { sel.disabled = false; });
+});
 
 $('refresh').addEventListener('click', load);
 load();
