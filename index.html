@@ -126,6 +126,7 @@ button.star:active{transform:scale(.88)}
 .pos{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;font-variant-numeric:tabular-nums;color:var(--ink-faint);flex:none}
 .pos.top{color:var(--win)}
 .record{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;margin-top:2px}
+.record .gd{color:var(--ink-soft);font-weight:700}
 
 .form{display:flex;gap:5px;margin:12px 0 11px}
 .fm{display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -274,7 +275,7 @@ const CFG = {
   concurrency: 6,
   maxFixturePages: 60,
   divisionTtlDays: 7,         // how long the shortlist of our divisions is trusted
-  cacheVersion: 1             // bump to invalidate every saved copy after a shape change
+  cacheVersion: 2             // bump to invalidate every saved copy after a shape change
 };
 
 const $ = id => document.getElementById(id);
@@ -466,6 +467,7 @@ const slimMatch = m => ({
 const slimRow = r => ({
   team_hash_id: r.team_hash_id, team_name: r.team_name, position: r.position,
   played: r.played, won: r.won, drawn: r.drawn, lost: r.lost,
+  goals_for: r.goals_for, goals_against: r.goals_against,
   goal_difference: r.goal_difference, points: r.points
 });
 
@@ -493,6 +495,19 @@ function readCache(){
     if (!c || !Array.isArray(c.teams) || !c.teams.length) return null;
     return { saved: c.saved, teams: c.teams, venues: new Map(c.venues || []) };
   } catch { return null; }
+}
+
+/* A version or season bump changes the key rather than the value, so the copy it
+   supersedes would sit there forever — 160 KB of it, out of a 5 MB budget the
+   live copy is also drawing on. Favourites are deliberately left alone: that key
+   is unversioned, and it holds the only thing here a person chose by hand.    */
+function pruneOldCaches(){
+  try {
+    for (const k of Object.keys(localStorage)){
+      if (!/^mvfc:(v\d+|divs:v\d+):/.test(k)) continue;
+      if (k !== CACHE_KEY && k !== DIV_KEY) localStorage.removeItem(k);
+    }
+  } catch { /* private mode */ }
 }
 
 function ago(ts){
@@ -862,6 +877,16 @@ function renderBoard(teams, venues){
           <td>${b.points}</td></tr>`;
       }).join('');
 
+    /* Goals sit on their own line rather than joining the W/D/L one, which already
+       fills a 300px card. Rendered only when Dribl has the counts — absent fields
+       would print as a real 0-0 and read as a team that has scored nothing.     */
+    let goalsLine = '';
+    if (a.goals_for != null && a.goals_against != null){
+      const gd = a.goal_difference != null ? a.goal_difference : a.goals_for - a.goals_against;
+      goalsLine = `<div class="record">F: ${a.goals_for} &nbsp;A: ${a.goals_against} `
+                + `&nbsp;<span class="gd">GD: ${gd > 0 ? '+' : ''}${gd}</span></div>`;
+    }
+
     const tag = teamTag(a, t.division);
     const label = divisionLabel(a, t.division);
     const on = isFav(a.team_hash_id);
@@ -879,6 +904,7 @@ function renderBoard(teams, venues){
           <span class="pos ${a.position <= 4 ? 'top' : ''}">${a.position}<span style="font-size:12px">/${t.ladder.length}</span></span>
         </div>
         <div class="record">${a.played} played &#183; ${a.won}W ${a.drawn}D ${a.lost}L &#183; ${a.points} pts</div>
+        ${goalsLine}
         <div class="form">${form}</div>
         ${lastLine}${nextLine}
         <div class="chev">Show results &amp; ladder</div>
@@ -1006,6 +1032,7 @@ function renderUpcoming(teams, venues){
 /* Refresh always rescans every division — it is the manual escape hatch for a team
    that appeared in a division the shortlist had stopped looking at. */
 $('refresh').addEventListener('click', () => load({ full: true }));
+pruneOldCaches(); // after both key constants exist, before anything reads storage
 loadFavs();       // must precede the first paint — the board is grouped by it
 load();
 </script>

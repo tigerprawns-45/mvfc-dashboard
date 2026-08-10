@@ -1,9 +1,9 @@
 # Manly Vale FC — Results & Ladders
 
 A single-page dashboard showing every competitive Manly Vale FC team (U12 and up,
-mixed and women's): current ladder position, recent form with scores, latest result,
-and the next fixture with time and ground. Data comes live from the MWFA Dribl match
-centre.
+mixed and women's): current ladder position, played/won/drawn/lost with goals for,
+against and difference, recent form with scores, latest result, and the next fixture
+with time and ground. Data comes live from the MWFA Dribl match centre.
 
 `index.html` is the whole application. No build step, no dependencies, no server-side
 component.
@@ -79,10 +79,16 @@ next visit — about 240 ms to first card, against several seconds for a cold lo
 then replaced when the live data arrives. If Dribl can't be reached, the saved copy
 stays on screen with a warning rather than the page failing empty.
 
-Only rendered fields are stored, which keeps it near 160 KB. Storing the raw ladder
+Only rendered fields are stored, which keeps it near 175 KB. Storing the raw ladder
 rows would blow the quota: each row carries `recent_matches` and `upcoming_matches`
 for every team in the division, none of which is displayed. Bump `CFG.cacheVersion`
 after changing the stored shape.
+
+A bump changes the key rather than the value, so the copy it supersedes would sit
+there indefinitely. `pruneOldCaches()` clears any `mvfc:v*` / `mvfc:divs:v*` key that
+isn't the current one on startup, which also collects last season's. Favourites are
+excluded by design — that key is unversioned and holds the only thing in storage a
+person chose by hand.
 
 Writes are wrapped in `try`/`catch` because Safari throws on `localStorage.setItem`
 in Private Browsing. Caching is an optimisation; nothing depends on it succeeding.
