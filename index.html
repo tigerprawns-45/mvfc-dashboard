@@ -746,11 +746,20 @@ async function load(opts){
 }
 
 /* ---------- board ---------- */
-function makeSection(title, isFavs){
+/* The four grade groups start collapsed. Opened, they are 38 cards deep, and the
+   question at a ground on a Saturday is about one or two teams — so the board
+   opens as a short index you choose from rather than a wall to scroll past. Your
+   teams stays open: a starred team is a statement that this is the one that
+   matters, and hiding it behind a tap would undo the point of starring it.
+
+   The exception is someone with nothing starred, who would otherwise arrive at
+   four headings and no football at all. `closed` is decided by the caller for
+   exactly that reason.                                                        */
+function makeSection(title, isFavs, closed){
   const section = document.createElement('section');
-  section.className = 'group' + (isFavs ? ' favs' : '');
+  section.className = 'group' + (isFavs ? ' favs' : '') + (closed ? ' closed' : '');
   section.innerHTML =
-    `<button class="group-head" aria-expanded="true">
+    `<button class="group-head" aria-expanded="${!closed}">
        <span class="tw">${title}</span>
        <span class="count"></span>
        <span class="caret">&#9660;</span>
@@ -764,6 +773,13 @@ function makeSection(title, isFavs){
   return { el: section, grid: section.querySelector('.grid') };
 }
 
+function openAllGroups(){
+  for (const s of document.querySelectorAll('#board .group')){
+    s.classList.remove('closed');
+    s.querySelector('.group-head').setAttribute('aria-expanded', 'true');
+  }
+}
+
 /* Counts change as teams are starred, and a group whose teams have all been
    favourited should disappear rather than render as an empty heading.        */
 function refreshSections(){
@@ -772,6 +788,19 @@ function refreshSections(){
     s.hidden = n === 0;
     s.querySelector('.count').textContent = `${n} ${n === 1 ? 'team' : 'teams'}`;
   }
+
+  /* Emptying Your teams has to land on the same board a visit with nothing
+     starred renders: groups open. Removing favourites one at a time otherwise
+     leaves it open only where a card happened to land and shut everywhere else,
+     which is a state nothing on screen accounts for. Tested on the section being
+     empty rather than on favs.size, so hashes from a stale ?fav= that match no
+     team this season can't hold the board shut behind an invisible favourite.
+
+     The reverse is deliberately not done. Collapsing the board under the finger
+     that just starred its first team would drop the page from six screens to one
+     and throw away their scroll position, for something they didn't ask for —
+     the collapse is how the board reads on arrival, not a live restructuring. */
+  if (!document.querySelector('#board .favs .team')) openAllGroups();
 }
 
 /* Moving the one card beats re-rendering the board: a full repaint would collapse
@@ -783,6 +812,15 @@ function placeCard(card){
   const order = +card.dataset.order;
   const after = [...target.children].find(c => +c.dataset.order > order);
   target.insertBefore(card, after || null);
+
+  /* Now that grade groups start collapsed, unstarring a team would drop its card
+     into a closed section — it simply disappears off the screen, which reads as
+     having deleted it. Open the section it landed in so the move is visible. */
+  const section = target.closest('.group');
+  if (section.classList.contains('closed')){
+    section.classList.remove('closed');
+    section.querySelector('.group-head').setAttribute('aria-expanded', 'true');
+  }
 }
 
 function renderBoard(teams, venues){
@@ -790,13 +828,18 @@ function renderBoard(teams, venues){
   const board = $('board');
   board.innerHTML = '';
 
-  const favSection = makeSection('Your teams', true);
+  /* Tested against the loaded teams rather than favs.size: a stale or hand-edited
+     ?fav= leaves hashes matching nothing, and those must not count as "has
+     favourites" or the board collapses down to nothing worth reading.        */
+  const anyFav = teams.some(t => isFav(t.a.team_hash_id));
+
+  const favSection = makeSection('Your teams', true, false);
   favSection.el.dataset.group = '__favs';
   board.appendChild(favSection.el);
 
   const grids = new Map();
   for (const g of GROUP_ORDER){
-    const s = makeSection(g, false);
+    const s = makeSection(g, false, anyFav);
     s.el.dataset.group = g;
     board.appendChild(s.el);
     grids.set(g, s.grid);

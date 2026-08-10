@@ -29,7 +29,10 @@ appear in `Junior mixed` and friends. Group counts adjust accordingly, and a gro
 whose teams are now all favourited is omitted entirely rather than rendered empty.
 
 `Your teams` is collapsible like the others but always defaults to open, including
-on mobile.
+on mobile. Once anything is starred the four grade groups default to *closed*, making
+this the only section open on arrival — which is the intent. Starring a team is a
+statement that this is the one that matters, and putting it behind a tap would undo
+the point of having starred it. See **Empty state** for what happens before that.
 
 **Next up.** Favourited fixtures keep their chronological position within the list
 but the panel gains a `Your teams` block at the top, repeating just those fixtures
@@ -41,8 +44,17 @@ Cap the pinned block at the next 5 favourite fixtures so it can't dominate the p
 ### Empty state
 
 With nothing favourited, the `Your teams` section and the pinned Next up block are
-both absent — no placeholder, no empty heading. The page looks exactly as it does
-today. The stars are the only new pixels.
+both absent — no placeholder, no empty heading.
+
+**The grade groups then open expanded rather than collapsed.** Collapsing them is
+worth it once someone has teams of their own at the top; without that, it leaves a
+first-time visitor looking at four headings and no football. So the collapse is
+conditional on there being at least one favourite to collapse *behind*.
+
+The test is whether any **loaded team** is favourited, not whether the stored set is
+non-empty. A stale or hand-edited `?fav=` leaves hashes matching nothing this season;
+those must not count, or a bad link produces the empty board this rule exists to
+prevent.
 
 ---
 
@@ -133,6 +145,26 @@ scroll position, which is jarring.
 pinned block, leaving everything else untouched. Slightly more code, no visual
 disruption. If that proves fiddly, full re-render with scroll position restored is
 an acceptable fallback.
+
+**Unstarring opens the section the card lands in.** With grade groups closed by
+default, moving a card out of `Your teams` would otherwise drop it into a collapsed
+section — it just vanishes from the screen, which reads as having deleted it. The
+destination group is expanded on arrival so the move is visible, and closing it again
+is one tap.
+
+**Unstarring the *last* favourite opens all of them.** Otherwise removing favourites
+one at a time leaves the board open only where a card happened to land and shut
+everywhere else — Junior mixed and Women open, Senior mixed and Girls closed, with
+nothing on screen accounting for the difference. Emptying `Your teams` has to arrive
+at the same board a visit with nothing starred renders. The condition is *the section
+is now empty*, not `favs.size === 0`: hashes from a stale `?fav=` match no team this
+season, and must not hold the board shut behind a favourite nobody can see.
+
+**Starring the first one does not collapse them again.** The asymmetry is deliberate.
+Closing four groups under the finger that just tapped a star would drop the page from
+about six screens to one and throw the reader's scroll position away, for something
+they didn't ask for. The collapse is how the board reads *on arrival*; it is not a
+live restructuring. The next load applies it.
 
 ---
 

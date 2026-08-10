@@ -5,6 +5,11 @@ mixed and women's): current ladder position, played/won/drawn/lost with goals fo
 against and difference, recent form with scores, latest result, and the next fixture
 with time and ground. Data comes live from the MWFA Dribl match centre.
 
+Once any team is starred the four grade groups open collapsed, so the board is a
+short index to choose from rather than 38 cards to scroll past, with `Your teams`
+expanded above them. With nothing starred they open expanded — there would be
+nothing else on the page otherwise.
+
 `index.html` is the whole application. No build step, no dependencies, no server-side
 component.
 
