@@ -50,7 +50,27 @@ Dribl exposes no way to list a club's teams. Instead the page:
 4. Fetches the club fixture list for grounds, which the ladders feed does not carry,
    and joins it on division name + exact kick-off time.
 
-That is roughly 90 requests per load, run six at a time.
+A full scan is about 90 requests, run six at a time.
+
+### Division shortlist
+
+Only 36 of this season's 75 public divisions contain a Manly Vale team; the other 39
+are fetched and discarded. So the divisions that did contain one are remembered in
+`localStorage` under `mvfc:divs:v<cacheVersion>:<season-id>`, and an ordinary visit
+scans just those — 48 requests instead of 90, since the competition and league
+listings are skipped along with them.
+
+The risk is a team appearing in a division the shortlist has stopped looking at: a
+regrade, a late entry, a finals draw moving a team up. Three things catch it.
+
+- **Refresh always rescans everything.** It is the manual escape hatch.
+- **The list expires after `CFG.divisionTtlDays`** (7), so a stale shortlist can
+  never be more than a week old.
+- **A shortlist scan that finds nothing immediately runs a full one** rather than
+  reporting no teams — this is what absorbs a season rollover or a wholesale regrade.
+
+Only a full scan writes the list, so a run of narrow loads can't keep postponing the
+weekly rescan.
 
 ### Saved copy
 

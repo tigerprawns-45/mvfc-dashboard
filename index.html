@@ -273,6 +273,7 @@ const CFG = {
   clubCode: 'MVFC',
   concurrency: 6,
   maxFixturePages: 60,
+  divisionTtlDays: 7,         // how long the shortlist of our divisions is trusted
   cacheVersion: 1             // bump to invalidate every saved copy after a shape change
 };
 
@@ -514,6 +515,54 @@ function notice(html, kind){
   el.hidden = false;
 }
 
+/* ---------- division shortlist ----------
+   Only about half the season's public divisions contain a Manly Vale team; the
+   rest are fetched and thrown away on every cold load. So the divisions that did
+   contain one are remembered, and an ordinary visit scans just those — roughly
+   half the requests, which is the whole of the remaining wait now that returning
+   visits paint from the saved copy first.
+
+   The risk this trades against is a team that appears in a division we stopped
+   looking at — a regrade, a late entry, a finals draw moving a team up. Three
+   things catch it: the Refresh button always rescans everything, the list expires
+   after a week, and a shortlist scan that comes back empty immediately pays for
+   the full one rather than reporting no teams. Only a full scan writes the list,
+   so a narrow load can never postpone the weekly rescan.                       */
+
+const DIV_KEY = `mvfc:divs:v${CFG.cacheVersion}:${CFG.season}`;
+
+function readDivisions(){
+  try {
+    const c = JSON.parse(localStorage.getItem(DIV_KEY) || 'null');
+    if (!c || !Array.isArray(c.divisions) || !c.divisions.length) return null;
+    if (Date.now() - c.saved > CFG.divisionTtlDays * 864e5) return null;
+    return c.divisions;
+  } catch { return null; }
+}
+function saveDivisions(divisions){
+  try {
+    localStorage.setItem(DIV_KEY, JSON.stringify({ saved: Date.now(), divisions }));
+  } catch { /* private mode */ }
+}
+
+/* Every public division in the season. `ladder_access === "public"` is exactly the
+   set of competitive grades — U06–U11 collect results but publish no ladder — so
+   there is no age list to keep up to date.                                     */
+async function allDivisions(){
+  const comps = await api('/list/competitions', {
+    disable_paging:true, tenant:CFG.tenant, season:CFG.season
+  });
+  const divisions = [];
+  for (const c of comps){
+    const leagues = await api('/list/leagues', {
+      disable_paging:true, tenant:CFG.tenant, season:CFG.season, competition:c.id
+    });
+    leagues.filter(l => l.ladder_access === 'public')
+           .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
+  }
+  return divisions;
+}
+
 /* ---------- favourites ----------
    Keyed to the season because team_hash_id is allocated per season — the same
    real-world team gets a different hash next winter, so an unscoped key would
@@ -581,7 +630,8 @@ function paint(teams, venues){
   $('layout').hidden = false;
 }
 
-async function load(){
+async function load(opts){
+  const full = !!(opts && opts.full);
   $('refresh').disabled = true;
 
   const box = $('status');
@@ -610,30 +660,35 @@ async function load(){
       new Promise(r => setTimeout(() => r(new Map()), 20000))
     ]).catch(() => new Map());
 
-    const comps = await api('/list/competitions', { disable_paging:true, tenant:CFG.tenant, season:CFG.season });
-
-    const divisions = [];
-    for (const c of comps){
-      const leagues = await api('/list/leagues', {
-        disable_paging:true, tenant:CFG.tenant, season:CFG.season, competition:c.id
-      });
-      leagues.filter(l => l.ladder_access === 'public')
-             .forEach(l => divisions.push({ competition:c.id, id:l.id, title:l.title }));
-    }
-
     // These only exist on a cold load; when a saved copy is already on screen the
     // refresh happens quietly behind it.
     const statusText = $('statusText'), barFill = $('barFill');
-    if (statusText) statusText.textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
 
-    const found = await pool(divisions, CFG.concurrency, async d => {
-      const rows = await api('/ladders', {
-        date_range:'default', ladder_type:'regular', require_pools:true,
-        tenant:CFG.tenant, season:CFG.season, competition:d.competition, league:d.id
-      });
-      const ours = rows.filter(r => r.attributes.club_code === CFG.clubCode);
-      return ours.length ? { division:d.title, rows, ours } : null;
-    }, (done, total) => { if (barFill) barFill.style.width = `${Math.round(done/total*100)}%`; });
+    const scan = async divisions => {
+      if (statusText) statusText.textContent = `Checking ${divisions.length} divisions for Manly Vale teams…`;
+      if (barFill) barFill.style.width = '0%';
+      return pool(divisions, CFG.concurrency, async d => {
+        const rows = await api('/ladders', {
+          date_range:'default', ladder_type:'regular', require_pools:true,
+          tenant:CFG.tenant, season:CFG.season, competition:d.competition, league:d.id
+        });
+        const ours = rows.filter(r => r.attributes.club_code === CFG.clubCode);
+        return ours.length ? { division:d.title, rows, ours, meta:d } : null;
+      }, (done, total) => { if (barFill) barFill.style.width = `${Math.round(done/total*100)}%`; });
+    };
+
+    const shortlist = full ? null : readDivisions();
+    let scannedAll = !shortlist;
+    let found = await scan(shortlist || await allDivisions());
+
+    if (!found.length && !scannedAll){
+      // The saved list has gone wrong in a way the week-long expiry didn't catch —
+      // a season rollover, a wholesale regrade. Pay for the full scan rather than
+      // telling a parent their club has no teams.
+      scannedAll = true;
+      found = await scan(await allDivisions());
+    }
+    if (scannedAll) saveDivisions(found.map(f => f.meta));
 
     const teams = [];
     for (const f of found)
@@ -948,7 +1003,9 @@ function renderUpcoming(teams, venues){
   });
 })();
 
-$('refresh').addEventListener('click', load);
+/* Refresh always rescans every division — it is the manual escape hatch for a team
+   that appeared in a division the shortlist had stopped looking at. */
+$('refresh').addEventListener('click', () => load({ full: true }));
 loadFavs();       // must precede the first paint — the board is grouped by it
 load();
 </script>
