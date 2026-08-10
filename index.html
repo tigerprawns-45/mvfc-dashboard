@@ -305,16 +305,23 @@ async function pool(items, limit, fn, onTick){
 }
 
 /* ---------- grouping / ordering ---------- */
+/* Under 100 means a junior age grade; 100 and over means an open or over-age one.
+   The named grades are tested first, and the leading-number rule last, because
+   MWFA writes the over-age competitions two different ways: the mixed ones as
+   "O35 02 Mixed", but the women's as a bare "W-40 01 Female". Matching the digits
+   first — as this did — reads that 40 as an age group and files a masters side
+   under Girls, below the under-18s. Junior grades are ages and stop at 18, so a
+   leading number from 30 up is an over-age grade, never an under-30s one.     */
 function ageRank(title){
   const t = title.replace(/^W-/, '');
-  const n = t.match(/^(\d+)/);
-  if (n) return parseInt(n[1], 10);
-  if (t.startsWith('PL')) return 100;
-  if (t.startsWith('AL')) return 101;
+  if (t.startsWith('PL'))  return 100;
+  if (t.startsWith('AL'))  return 101;
   if (t.startsWith('O35')) return 102;
   if (t.startsWith('O45')) return 103;
-  if (t.startsWith('40')) return 104;
-  return 200;
+  const n = t.match(/^(\d+)/);
+  if (!n) return 200;
+  const age = parseInt(n[1], 10);
+  return age >= 30 ? 100 + age : age;
 }
 function groupOf(title){
   const female = title.startsWith('W-');

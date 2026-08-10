@@ -131,6 +131,13 @@ Base `https://mc-api.dribl.com/api`, public, no auth.
   funnel through the single `when()` helper — do not parse a Dribl date any other way.
 - Unallocated fixtures ship with an empty team name and a null ground. These render as
   "opponent TBC" and "Ground TBC"; they are not lookup failures.
+- **Over-age divisions are named two different ways.** Mixed uses an `O` prefix —
+  `O35 02 Mixed`, `O45 05 Mixed` — but women's uses a bare number, `W-40 01 Female`.
+  There is no `W-O35` or `W-O45`; `W-40` is the entire women's over-age competition.
+  `ageRank()` therefore tests the named grades *before* the leading-number rule:
+  matching digits first reads that `40` as an age group and files a masters side
+  under Girls, below the under-18s. Junior grades are ages and stop at 18, so a
+  leading number of 30 or more is always an over-age grade.
 
 ## Files
 
